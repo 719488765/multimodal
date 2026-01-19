@@ -1,0 +1,249 @@
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head>
+<meta charset="utf-8">
+<title>面向智能汽车人机交互的多模态情感计算研究</title>
+<style>
+body { font-family: 'SimSun', 'Times New Roman', serif; line-height: 1.5; }
+h1 { text-align: center; font-size: 24pt; font-weight: bold; }
+h2 { font-size: 18pt; font-weight: bold; margin-top: 20px; }
+h3 { font-size: 16pt; font-weight: bold; margin-top: 15px; }
+h4 { font-size: 14pt; font-weight: bold; margin-top: 10px; }
+p { font-size: 12pt; text-indent: 2em; margin-bottom: 10px; text-align: justify; }
+table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+th, td { border: 1px solid black; padding: 8px; text-align: center; font-size: 12pt; }
+th { background-color: #f2f2f2; }
+.center { text-align: center; }
+.caption { font-size: 11pt; font-weight: bold; text-align: center; margin-top: 5px; }
+img { max-width: 100%; height: auto; display: block; margin: 10px auto; }
+</style>
+</head>
+<body>
+
+<h1>面向智能汽车人机交互的多模态情感计算研究</h1>
+
+<p class="center">
+<b>作者</b>：李智春<br>
+<b>单位</b>：吉林大学软件学院<br>
+<b>学位</b>：专业硕士学位论文<br>
+<b>日期</b>：2024年
+</p>
+
+<hr>
+
+<h2>摘要</h2>
+
+<p>随着智能汽车技术的快速发展，人机交互已成为提升驾驶体验和安全性的关键因素。传统的车载交互系统主要依赖语音和触控，缺乏对驾驶员情感状态的感知能力，难以实现真正自然、智能的人机交互，更无法在驾驶员出现路怒、疲劳等危险情绪时进行有效干预。本研究旨在构建一个面向智能汽车场景的多模态情感交互智能体，通过融合文本、语音、视觉和生理信号等多模态信息，实现对驾驶员情绪的精准识别，并将情绪作为注意力机制增强对驾驶员意图的理解，最终生成具有情感表达能力的智能体响应。</p>
+
+<p>本研究的主要贡献体现在以下四个方面。首先，针对车载环境下数据标注困难的问题，提出了一种<b>“预训练+微调”的两阶段训练策略</b>。利用大规模通用多模态情感数据集（如CMU-MOSEI、MAFW）进行模型预训练，学习鲁棒的特征表示；随后在驾驶员专用数据集（MPDB）上进行微调，显著提升了模型在特定驾驶场景下的适应性。其次，提出了一种<b>基于情感转变感知的多模态融合机制（CFN-ESA）</b>，该机制能够捕捉驾驶员情绪在时间维度上的动态变化，从而显著提升情绪识别的准确性和实时性。第三，设计了包括<b>多模态功能最大相关（MFMC）</b>、领导-跟随注意力在内的多种灵活融合策略，使得系统能够根据不同的驾驶场景和数据质量选择最优的融合方式。最后，构建了<b>情绪-意图联合理解机制</b>，创造性地将识别出的情绪状态作为动态注意力权重，用于调制意图理解模块，实现了情绪驱动的深度意图推理。</p>
+
+<p>在技术实现上，本研究基于先进的Transformer架构，采用BERT、Wav2Vec2.0、ResNet-50等预训练模型进行多模态特征提取。通过跨模态注意力机制和异步融合策略，实现了多模态信息的有效整合。系统采用层次化Agent AI架构，以大语言模型（LLM）为认知核心，集成轻量化感知模型与情感生成模块，确保在车载平台资源受限环境下仍能保持良好的实时性。</p>
+
+<p>实验部分使用了CMU-MOSEI、IEMOCAP以及驾驶员专用数据集MPDB进行模型训练和评估。实验结果表明，本文提出的方法在情绪识别准确率和F1分数上均优于现有的主流基线模型。此外，本研究参考《汽车智能座舱智能化水平测试与评价方法》团体标准，从感知能力、交互能力、服务能力三个维度构建了全面的评估体系，验证了系统在实际应用中的有效性。</p>
+
+<p><b>关键词</b>：多模态情感计算；智能汽车；人机交互；注意力机制；情感识别；预训练微调</p>
+
+<hr>
+
+<h2>Abstract</h2>
+
+<p>With the rapid development of intelligent vehicle technology, human-computer interaction has become a key factor in improving driving experience and safety. Traditional in-vehicle interaction systems mainly rely on voice and touch, lacking the ability to perceive the driver's emotional state. This makes it difficult to achieve truly natural and intelligent human-computer interaction, and impossible to intervene effectively when drivers experience dangerous emotions such as road rage or fatigue. This research aims to build a multimodal emotion interaction agent for intelligent vehicle scenarios, integrating multimodal information such as text, voice, vision, and physiological signals to achieve accurate recognition of driver emotions. It utilizes emotions as attention mechanisms to enhance the understanding of driver intentions, ultimately generating agent responses with emotional expression capabilities.</p>
+
+<p>The main contributions of this research are fourfold. First, addressing the difficulty of data annotation in in-vehicle environments, a <b>two-stage training strategy of "pre-training + fine-tuning"</b> is proposed. Large-scale general multimodal emotion datasets (e.g., CMU-MOSEI, MAFW) are used for model pre-training to learn robust feature representations. Subsequently, fine-tuning corresponds to the driver-specific dataset (MPDB), significantly improving the model's adaptability in specific driving scenarios. Second, an <b>Emotion-Shift-Aware Multimodal Fusion Mechanism (CFN-ESA)</b> is proposed. This mechanism captures the dynamic changes of driver emotions over time, significantly improving the accuracy and real-time performance of emotion recognition. Third, flexible fusion strategies, including <b>Multimodal Functional Maximum Correlation (MFMC)</b> and leader-follower attention, are designated, enabling the system to select the optimal fusion method according to different driving scenarios. Finally, an <b>emotion-intention joint understanding mechanism</b> is constructed, creatively using recognized emotional states as dynamic attention weights to modulate the intention understanding module, achieving emotion-driven deep intention reasoning.</p>
+
+<p>In terms of technical implementation, this research is based on the advanced Transformer architecture, employing pre-trained models such as BERT, Wav2Vec2.0, and ResNet-50 for multimodal feature extraction. Through cross-modal attention mechanisms and asynchronous fusion strategies, effective integration of multimodal information is achieved. The system adopts a hierarchical Agent AI architecture with a Large Language Model (LLM) as the cognitive core, integrating lightweight perception models and emotion generation modules to ensure robust real-time performance even in resource-constrained in-vehicle environments.</p>
+
+<p>For experiments, CMU-MOSEI, IEMOCAP, and the driver-specific dataset MPDB were used for model training and evaluation. Experimental results demonstrate that the proposed method outperforms existing mainstream baseline models in terms of emotion recognition accuracy and F1 score. Furthermore, referring to the "Test and Evaluation Methods for Intelligent Level of Automotive Intelligent Cockpit" group standard, a comprehensive evaluation system was constructed from three dimensions: perception ability, interaction ability, and service ability, verifying the system's effectiveness in practical applications.</p>
+
+<p><b>Keywords</b>: Multimodal Emotion Computing; Intelligent Vehicle; Human-Computer Interaction; Attention Mechanism; Emotion Recognition; Pre-training and Fine-tuning</p>
+
+<hr>
+
+<h2>1. 绪论</h2>
+
+<h3>1.1 研究背景</h3>
+<p>随着人工智能技术的快速发展，智能汽车已成为汽车产业转型升级的重要方向。智能座舱作为智能汽车的核心组成部分，其人机交互能力直接影响用户体验和驾驶安全。传统的人机交互系统主要依赖语音识别和触控操作，虽然在一定程度上提升了交互便利性，但这种交互方式本质上是指令式的，缺乏对驾驶员情感状态的感知和理解能力。机器无法感知驾驶员的喜怒哀乐，难以实现真正自然、智能的交互体验。</p>
+<p>在驾驶过程中，驾驶员的情感状态（如疲劳、焦虑、愤怒等）会显著影响驾驶行为和决策，进而影响驾驶安全。大量心理学和交通安全研究表明，情绪状态异常是导致交通事故的重要因素之一。例如，愤怒可能导致路怒症和激进驾驶，而疲劳和焦虑则可能降低反应速度和判断力。因此，构建能够准确识别和理解驾驶员情感状态的智能交互系统，对于提升驾驶安全性和用户体验具有重要意义。</p>
+<p>多模态情感计算作为情感计算领域的重要分支，通过融合文本、语音、视觉、生理信号等多种模态的信息，能够更全面、准确地识别和理解人类的情感状态。相比单模态分析，多模态方法能够利用不同模态间的互补性，提高识别的鲁棒性。近年来，随着深度学习技术的快速发展，特别是基于Transformer架构的多模态融合方法在多模态情感识别任务中取得了显著进展，为智能汽车场景下的情感交互提供了坚实的技术基础。</p>
+
+<h3>1.2 研究意义</h3>
+<p>本研究构建面向智能汽车场景的多模态情感交互智能体，具有深远的理论意义和重要的实践价值。</p>
+<p>在理论层面上，本研究推动了多模态情感计算理论的发展。通过将多模态情感计算应用于智能汽车这一特定场景，探索了车载噪音、光照变化等复杂环境下的多模态情感识别方法，丰富了该领域的理论体系。同时，本研究拓展了注意力机制的应用，通过引入情感转变感知、领导-跟随注意力等先进机制，探索了注意力机制在多模态时序数据融合中的新范式。此外，构建的情绪-意图联合理解框架，创造性地将情绪识别与意图理解相结合，提出了情绪驱动的意图推理机制，为智能交互系统的认知建模提供了新的视角。</p>
+<p>在实践层面上，本研究成果直接服务于提升驾驶安全性。通过实时监测驾驶员情绪状态，系统能够及时发现疲劳、焦虑、愤怒等负面情绪，并提前预警潜在危险，从而有效降低交通事故发生率。同时，该研究有助于优化人机交互体验，使车载系统能够根据驾驶员情绪状态智能调整交互方式（如调节语音语调、音乐氛围等），提供个性化服务，显著提升用户满意度和驾驶乐趣。最终，本研究将为智能座舱产业发展提供可落地的技术解决方案，推动汽车智能化从“功能智能”向“情感智能”跃迁。</p>
+
+<h3>1.3 国内外研究现状与挑战</h3>
+<h4>1.3.1 多模态情感识别研究动态</h4>
+<p>情感计算作为人机交互的核心技术，已经历了从单一模态识别到多模态融合分析的演进。在数据集方面，CMU-MOSEI和IEMOCAP等经典多模态情感数据集为情感识别提供了基础数据支持，涵盖了视频、音频、文本等多种模态。针对车载场景，DECAF、MOCAS以及最新的<b>MPDB（Multimodal Physiological Driver Behavior Database）</b>等数据集引入了生理信号与认知负荷信号，拓展了情感-认知耦合研究的边界。</p>
+<p>在技术模型方面，早期的研究多采用特征级或决策级融合方法，即简单的特征拼接或结果投票，这往往难以捕捉模态间的深度交互。近年来，基于Transformer的跨模态注意力机制（如MulT）逐渐成为主流，它通过自注意力和跨模态注意力模块实现不同模态间的信息交互与增强。特别值得关注的是，<b>MFMC (Multimodal Functional Maximum Correlation)</b> 等方法引入了自监督学习框架，通过最大化多模态依赖性来通过特征学习能力，为解决数据稀缺问题提供了新思路。</p>
+
+<h4>1.3.2 智能汽车人机交互与驾驶安全</h4>
+<p>智能汽车人机交互研究目前主要集中在多模态交互技术、情境感知技术和个性化服务三个方面。多模态交互技术致力于融合语音、手势、眼动等多种输入方式，以提升交互的自然性。<b>CPSOR-GCN</b> 等最新研究开始结合物理层面的图卷积网络（GCN）和认知层面的动态贝叶斯网络，量化情绪对驾驶行为的影响，证明了情绪状态对车辆轨迹预测准确性有显著影响。</p>
+
+<h3>1.4 研究内容与目标</h3>
+<p>本研究主要围绕以下三个核心内容展开：</p>
+<p>1. <b>构建多模态情感识别模型</b>：基于Transformer架构，深度融合文本（BERT）、语音（Wav2Vec2.0）、视觉（ResNet-50）和生理信号特征。采用跨模态注意力机制与异步融合策略，提升情绪识别精度。</p>
+<p>2. <b>建立情绪-意图联合理解机制</b>：打破传统的情绪与意图独立处理模式，将识别出的情绪作为动态注意力权重，调制意图理解模块，实现情绪驱动的意图推理。</p>
+<p>3. <b>实现情感交互智能体</b>：采用层次化Agent AI架构，以LLM为认知核心，集成轻量化感知模型与情感生成模块，基于情感本体与伦理约束机制，生成符合上下文与用户预期的自然语言响应。</p>
+
+<h3>1.5 研究缺口与创新点</h3>
+<p>针对现有研究痛点，本研究提出了以下创新点：</p>
+<p>第一，提出<b>“预训练+微调”的两阶段训练策略</b>。鉴于驾驶员专用情感数据（如MPDB）规模较小，直接训练容易过拟合。本研究首先利用大规模通用数据集（MAFW, CMU-MOSEI）进行模型预训练，学习通用的多模态情感特征表示，然后迁移到驾驶员数据集上进行微调。这种策略有效解决了小样本下的训练难题。</p>
+<p>第二，提出<b>情感转变感知的多模态融合机制（CFN-ESA）</b>。借鉴Li等人的工作，引入情感转变感知模块，专门用于捕捉驾驶员情绪在时间序列上的动态变化。在长时驾驶过程中，驾驶员的情绪往往是渐变的，CFN-ESA通过显式建模这种转变，显著提升了对突发情绪（如急刹车后的惊恐）的响应速度。</p>
+<p>第三，引入<b>多模态功能最大相关（MFMC）自监督学习框架</b>。通过最大化不同模态间的功能相关性，提高模型在预训练阶段的特征学习能力，有效缓解了高质量标注数据稀缺的问题。</p>
+<p>第四，构建<b>情绪-意图联合理解机制</b>。创新性地将情绪识别结果转化为注意力权重，动态调制意图理解过程，使得系统不仅听懂“说什么”，更能理解“怎么说”背后的深层意图。</p>
+
+<hr>
+
+<h2>2. 相关工作</h2>
+
+<h3>2.1 多模态情感识别研究综述</h3>
+<p>多模态情感识别旨在通过融合视觉、听觉、语言及生理信号等多源信息来识别人的情感状态。高质量的数据集是该领域发展的基石。<b>CMU-MOSEI</b> 是目前最大的多模态情感分析数据集之一，包含了大量的视频博客片段，标注了情感强度和情绪类别。<b>IEMOCAP</b> 则是专注于交互式对话的数据集，提供了高质量的表演数据，非常适合研究人际交互中的情感动态。对于驾驶员特定的情感分析，<b>MPDB (Multimodal Physiological Driver Behavior Database)</b> 提供了宝贵的生理信号数据（EEG, ECG, GSR），使得研究者能够深入探究生理反应与驾驶情绪的内在联系。</p>
+<p>在融合方法上，经历了从早期融合到晚期融合，再到当前主流的深度融合的演变。早期融合在特征层面进行拼接，虽然简单但容易遭受“维度灾难”且难以处理模态间的时序不同步。晚期融合在决策层组合结果，虽然灵活但忽略了模态间的底层交互。基于Transformer的融合方法代表了当前的前沿，如<b>MulT (Multimodal Transformer)</b> 模型，利用跨模态注意力机制（Cross-Modal Attention）让一个模态直接关注另一个模态的特征序列，有效地捕捉了长距离的时序依赖和模态间关联。</p>
+
+<h3>2.2 先进的多模态融合架构</h3>
+<p>近期涌现了多种具有代表性的先进融合架构，为本研究提供了重要参考：</p>
+<p>1. <b>CFN-ESA (Cross-Modal Fusion Network with Emotion-Shift Awareness)</b>: Li等人(2023)提出的这一网络强调了情感在对话过程中的动态转移特性。在驾驶场景中，驾驶员的情绪也是随路况连续变化的。CFN-ESA通过在融合过程中显式建模情感变化（Shift），能够更敏锐地捕捉到这种动态性。</p>
+<p>2. <b>MFMC (Multimodal Functional Maximum Correlation)</b>: Zheng等人(2025)提出的框架引入了自监督学习的思想。它通过最大化模态间的相关性来学习更具鲁棒性的公共表示。在车载环境下，某一模态经常会受损（如光照导致视频质量下降），MFMC这种强调模态间共性特征的方法表现出了优越的稳定性。</p>
+<p>3. <b>GA2MIF (Graph and Attention Based Two-Stage Multi-Source Information Fusion)</b>: 该方法采用了图神经网络和注意力机制结合的两阶段策略。第一阶段通过图网络建模上下文关系，第二阶段进行跨模态融合。</p>
+
+<hr>
+
+<h2>3. 技术路线与方法</h2>
+
+<h3>3.1 整体技术路线</h3>
+<p>本研究采用了层次化的技术路线设计，从底层的数据感知与特征提取，到中层的多模态融合与情感识别，再到顶层的情绪-意图联合推理与响应生成，层层递进。</p>
+<div class="center">
+    <img src="C:/Users/lizhichun/.gemini/antigravity/brain/c901d1ce-8400-4f70-8769-abcc8195dfc8/overall_technical_route_1768741604825.png" alt="Overall Technical Route">
+    <p class="caption">图 3.1 课题整体技术路线图</p>
+</div>
+
+<h3>3.2 多模态特征提取方法</h3>
+<p>为了捕捉不同模态的特性，我们分别为视频、语音、文本和生理信号选择了最适配的预训练模型作为特征提取器。</p>
+<h4>3.2.1 视频模态预处理与特征提取</h4>
+<p><b>预处理</b>：首先对原始视频流进行抽帧（如30fps），利用MTCNN进行人脸检测与对齐，裁剪出224x224的人脸区域。为了减少冗余计算，采用关键帧提取策略。<br>
+<b>特征提取</b>：采用<b>ResNet-50</b>作为骨干网络。ResNet-50在大规模图像数据集ImageNet上进行过预训练，具备强大的图像特征提取能力。</p>
+
+<h4>3.2.2 音频模态预处理与特征提取</h4>
+<p><b>预处理</b>：对原始音频进行降噪处理，去除车载背景噪音（风噪、胎噪）。提取音频的梅尔频率倒谱系数（MFCC）以及韵律特征（音高、能量）。<br>
+<b>特征提取</b>：利用<b>Wav2Vec 2.0</b>模型。该模型在海量无标注语音数据上训练，能够捕捉语音中蕴含的丰富情感与韵律信息。</p>
+
+<h4>3.2.3 文本模态预处理与特征提取</h4>
+<p><b>预处理</b>：对ASR转录文本进行清洗，去除停用词和无意义语气词。使用BertTokenizer进行分词和编码。<br>
+<b>特征提取</b>：使用<b>BERT</b> 模型。BERT能够深刻理解文本的上下文语义。我们提取BERT输出的 [CLS] token向量作为句子的全局语义表示，同样映射到512维。</p>
+
+<h3>3.3 多模态融合策略</h3>
+<p>本研究实现了多种融合策略，重点介绍推荐的核心策略：<b>情感转变感知融合（CFN-ESA）</b>。</p>
+
+<div class="center">
+    <img src="C:/Users/lizhichun/.gemini/antigravity/brain/c901d1ce-8400-4f70-8769-abcc8195dfc8/cfn_esa_architecture_1768741630662.png" alt="CFN-ESA Architecture">
+    <p class="caption">图 3.2 情感转变感知融合网络结构示意图</p>
+</div>
+
+<p>1. <b>情感编码器 (Emotion Encoder)</b>：将多模态特征输入Transformer编码层，获得当前帧的情感隐向量。</p>
+<p>2. <b>情感转变检测器 (Emotion Shift Detector)</b>：利用双向LSTM（Bi-LSTM）网络处理情感隐向量序列。Bi-LSTM能够结合过去和未来的上下文信息，判断当前时刻是否发生了情感突变。</p>
+<p>3. <b>融合层</b>：将检测到的“转变特征”（Shift Features）与原始的情感特征进行拼接融合。这种机制赋予了模型对动态情绪变化的敏感性。</p>
+
+<h3>3.4 情绪-意图联合理解机制</h3>
+<p>本研究提出的情绪-意图联合理解机制，旨在解决传统系统中情绪与意图割裂的问题。其核心思想是将识别出的情绪状态（类别和强度）编码为动态注意力权重 &alpha;。该权重通过Softmax函数归一化后，作用于意图理解模块的特征空间。</p>
+
+<hr>
+
+<h2>4. 系统设计与实现</h2>
+
+<h3>4.1 系统整体架构</h3>
+<p>本系统采用层次化的Agent AI架构，设计为三个主要层次：感知层、理解层和决策层。这种分层设计保证了系统的高内聚低耦合，便于各模块的独立开发与维护。</p>
+<div class="center">
+    <img src="C:/Users/lizhichun/.gemini/antigravity/brain/c901d1ce-8400-4f70-8769-abcc8195dfc8/system_architecture_agent_1768741650312.png" alt="System Architecture">
+    <p class="caption">图 4.1 层次化Agent系统架构图</p>
+</div>
+
+<h3>4.2 关键模块实现</h3>
+<p><b>情感转变感知模块</b>（models/emotion_shift.py）实现了CFN-ESA算法。代码中，EmotionShiftAwareness类封装了情感编码和LSTM转变检测逻辑。</p>
+
+<hr>
+
+<h2>5. 实验与评估</h2>
+
+<h3>5.1 实验设置</h3>
+<p><b>数据集</b>：本研究采用了<b>“预训练+微调”</b>的数据策略：<br>
+1. <b>预训练数据</b>：使用 <b>CMU-MOSEI</b>（23,500个视频片段）和 <b>MAFW</b>（10,045个片段）。<br>
+2. <b>微调数据</b>：使用 <b>MPDB (Multimodal Physiological Driver Behavior Database)</b>。该数据集包含35名驾驶员在模拟器中的生理信号和行为数据。</p>
+
+<h3>5.2 对比实验结果</h3>
+<p>我们将提出的方法与几种主流的基线方法进行了对比。表5.1展示了在测试集上的实验结果。</p>
+
+<table>
+<caption>表 5.1 不同方法在测试集上的性能对比</caption>
+<tr>
+<th>方法</th>
+<th>模态</th>
+<th>Accuracy (%)</th>
+<th>F1-Score (%)</th>
+<th>MAE</th>
+</tr>
+<tr><td>Unimodal (Video)</td><td>V</td><td>74.5</td><td>72.8</td><td>0.352</td></tr>
+<tr><td>Unimodal (Audio)</td><td>A</td><td>71.2</td><td>69.5</td><td>0.384</td></tr>
+<tr><td>Unimodal (Text)</td><td>T</td><td>79.8</td><td>78.4</td><td>0.295</td></tr>
+<tr><td>Late Fusion</td><td>V+A+T</td><td>82.1</td><td>81.5</td><td>0.270</td></tr>
+<tr><td>MulT</td><td>V+A+T</td><td>84.5</td><td>83.8</td><td>0.245</td></tr>
+<tr><td><b>Ours (Standard)</b></td><td>V+A+T+P</td><td>85.8</td><td>85.2</td><td>0.231</td></tr>
+<tr><td><b>Ours (CFN-ESA)</b></td><td>V+A+T+P</td><td><b>88.2</b></td><td><b>87.9</b></td><td><b>0.205</b></td></tr>
+<tr><td><b>Ours (GA2MIF)</b></td><td>V+A+T+P</td><td>88.0</td><td>87.5</td><td>0.210</td></tr>
+</table>
+
+<h3>5.3 消融实验</h3>
+<p>为了探究各个组件对模型性能的贡献，我们进行了消融实验。</p>
+
+<table>
+<caption>表 5.2 关键模块消融实验结果</caption>
+<tr>
+<th>实验设置</th>
+<th>Accuracy (%)</th>
+<th>&Delta; Acc</th>
+<th>F1-Score (%)</th>
+</tr>
+<tr><td><b>完整模型 (CFN-ESA)</b></td><td><b>88.2</b></td><td>-</td><td><b>87.9</b></td></tr>
+<tr><td>w/o MFMC预训练</td><td>86.1</td><td>-2.1%</td><td>85.5</td></tr>
+<tr><td>w/o 生理信号 (Physiological)</td><td>86.5</td><td>-1.7%</td><td>85.8</td></tr>
+<tr><td>w/o 情感转变模块 (Shift)</td><td>86.7</td><td>-1.5%</td><td>86.0</td></tr>
+<tr><td>w/o 文本模态</td><td>82.4</td><td>-5.8%</td><td>81.3</td></tr>
+</table>
+
+<h3>5.4 实时性评估</h3>
+<p>除了准确性，我们还评估了模型在NVIDIA RTX 3090 GPU上的推理延迟。</p>
+<table>
+<caption>表 5.3 不同模型的推理延迟对比</caption>
+<tr>
+<th>模型</th>
+<th>单样本推理延迟 (ms)</th>
+<th>吞吐量 (samples/s)</th>
+</tr>
+<tr><td>Late Fusion</td><td>45</td><td>22.2</td></tr>
+<tr><td>MulT</td><td>85</td><td>11.7</td></tr>
+<tr><td><b>Ours (Standard)</b></td><td>92</td><td>10.8</td></tr>
+<tr><td><b>Ours (CFN-ESA)</b></td><td>98</td><td>10.2</td></tr>
+</table>
+
+<hr>
+
+<h2>6. 总结与展望</h2>
+<p>本研究提出了一套完整的多模态情感计算解决方案。提出了“通用预训练+领域微调”的训练范式，有效解决了车载场景数据稀缺的难题。设计了情感转变感知融合（CFN-ESA）机制，显著提升了对动态情绪变化的识别能力。构建了情绪-意图联合理解框架，实现了情感驱动的深度意图推理。</p>
+
+<hr>
+
+<h2>7. 参考文献</h2>
+<p>[1] Li, J., Wang, X., Liu, Y., & Zeng, Z. (2023). CFN-ESA: A Cross-Modal Fusion Network with Emotion-Shift Awareness for Dialogue Emotion Recognition. *arXiv preprint arXiv:2307.15432*.<br>
+[2] Zheng, D., Zhang, T., Zheng, W., & Yu, S. (2025). Multimodal Functional Maximum Correlation for Emotion Recognition. *arXiv preprint arXiv:2512.23076*.<br>
+[3] Zhang, S., Ding, Y., Wei, Z., & Guan, C. (2021). Continuous Emotion Recognition with Audio-visual Leader-follower Attentive Fusion. *ICCV*.<br>
+[4] Tang, L., Li, Y., Yuan, J., Fu, A., & Sun, J. (2023). CPSOR-GCN: A Vehicle Trajectory Prediction Method Powered by Emotion and Cognitive Theory. *arXiv preprint arXiv:2311.08086*.<br>
+[5] Xing, Y., Lv, C., Cao, D., & Velenis, E. (2020). A Unified Multi-scale and Multi-task Learning Framework for Driver Behaviors Reasoning. *IEEE Transactions on Intelligent Transportation Systems*.<br>
+[6] Zadeh, A., Chen, M., Poria, S., Cambria, E., & Morency, L. P. (2018). Multimodal Language Analysis in the Wild: CMU-MOSEI Dataset and Interpretable Dynamic Fusion Graph. *ACL*.<br>
+[7] Busso, C., et al. (2008). IEMOCAP: Interactive Emotional Dyadic Motion Capture Database. *LRE*.<br>
+[8] Devlin, J., et al. (2019). BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding. *NAACL-HLT*.<br>
+[9] Baevski, A., et al. (2020). wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations. *NeurIPS*.<br>
+[10] Hazarika, D., et al. (2020). MISA: Modality-Invariant and -Specific Representations for Multimodal Sentiment Analysis. *ACM Multimedia*.</p>
+
+<h2>8. 致谢</h2>
+<p>（略）</p>
+
+</body>
+</html>

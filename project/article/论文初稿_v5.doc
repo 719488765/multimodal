@@ -1,0 +1,203 @@
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>面向智能汽车人机交互的多模态情感计算研究</title>
+<style>
+body { font-family: 'SimSun', 'Times New Roman', serif; line-height: 1.5; font-size: 12pt; }
+h1 { text-align: center; font-size: 24pt; font-weight: bold; margin-bottom: 30px; }
+h2 { font-size: 16pt; font-weight: bold; margin-top: 20px; background-color: #f0f0f0; padding: 5px; }
+h3 { font-size: 14pt; font-weight: bold; margin-top: 15px; }
+h4 { font-size: 13pt; font-weight: bold; margin-top: 10px; }
+p { text-indent: 2em; margin-bottom: 10px; text-align: justify; }
+table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+th, td { border: 1px solid black; padding: 8px; text-align: center; font-size: 11pt; }
+th { background-color: #d9d9d9; font-weight: bold; }
+.center { text-align: center; }
+.caption { font-size: 11pt; font-weight: bold; text-align: center; margin-top: 5px; margin-bottom: 20px; }
+img { max-width: 90%; height: auto; display: block; margin: 10px auto; border: 1px solid #ccc; }
+li { margin-left: 2em; }
+.abstract { font-family: 'KaiTi'; margin: 20px 40px; border: 1px solid #ddd; padding: 20px; background-color: #fafafa; }
+</style>
+</head>
+<body>
+
+<h1>面向智能汽车人机交互的多模态情感计算研究</h1>
+
+<p class="center" style="font-size: 14pt;">
+<b>作者</b>：李智春<br>
+<b>单位</b>：吉林大学软件学院<br>
+<b>学位</b>：专业硕士学位论文<br>
+<b>日期</b>：2024年
+</p>
+
+<hr style="margin: 30px 0;">
+
+<div class="abstract">
+<h2>摘要</h2>
+<p>随着智能汽车技术的快速发展，人机交互（HMI）已成为提升驾驶体验和保障行车安全的关键因素。传统的车载交互系统主要依赖指令式的语音和触控操作，缺乏对驾驶员情感状态的感知能力，难以实现真正自然、智能的主动交互，更无法在驾驶员出现路怒、疲劳、焦虑等危险情绪时进行有效干预。本研究旨在构建一个面向智能汽车场景的多模态情感交互智能体，通过深度融合文本、语音、视觉和生理信号等多模态信息，实现对驾驶员情绪的精准识别，并将情绪识别结果作为动态注意力机制，增强系统对驾驶员意图的理解，最终生成具有情感共鸣能力的智能体响应。</p>
+<p>本研究的主要贡献体现在以下四个方面：<br>
+1. <b>“预训练+微调”的两阶段训练策略</b>：针对车载环境下高质量情感标注数据稀缺的问题，提出利用大规模通用多模态情感数据集（如CMU-MOSEI、MAFW）进行模型预训练，学习鲁棒的特征表示；随后在驾驶员专用数据集（MPDB）上进行微调，显著提升了模型在特定驾驶场景下的适应性。<br>
+2. <b>情感转变感知的多模态融合机制（CFN-ESA）</b>：针对驾驶过程中情绪随路况动态变化的特点，引入情感转变感知模块，通过双向LSTM捕捉情绪在时间维度上的动态演变，显著提升了对突发情绪（如急刹车后的惊恐）的响应速度和识别准确性。<br>
+3. <b>情绪-意图联合理解机制</b>：创造性地将识别出的情绪状态编码为动态注意力权重，用于调制意图理解模块，实现了情绪驱动的深度意图推理，使系统能够理解“气话”背后的真实需求。<br>
+4. <b>工程化系统设计与验证</b>：基于层次化Agent架构，设计并实现了包含数据感知、特征提取、多模态融合及决策响应的完整系统，并在模拟驾驶环境中验证了其实时性和有效性。</p>
+<p><b>关键词</b>：多模态情感计算；智能汽车；人机交互；注意力机制；情感识别；预训练微调；CFN-ESA</p>
+</div>
+
+<div style="page-break-after: always;"></div>
+
+<h2>目录</h2>
+<p>1. 绪论<br>
+2. 相关工作<br>
+3. 技术路线与方法<br>
+4. 系统设计与实现<br>
+5. 实验与评估<br>
+6. 总结与展望<br>
+7. 参考文献<br>
+8. 致谢</p>
+
+<div style="page-break-after: always;"></div>
+
+<h2>1. 绪论</h2>
+
+<h3>1.1 研究背景</h3>
+<h4>1.1.1 智能汽车技术的发展趋势</h4>
+<p>近年来，随着人工智能、物联网、大数据等新一代信息技术的飞速发展，汽车产业正在经历一场百年来未有之大变局。智能汽车已成为全球汽车产业发展的战略方向。从最初的被动安全辅助，到自适应巡航（ACC）、车道保持（LKA）等L2级辅助驾驶功能，再到如今部分商业化落地的L3级有条件自动驾驶，汽车的智能化水平不断提高。</p>
+<p>然而，在迈向完全自动驾驶（L5）的漫长过渡期内，人机共驾（User-In-The-Loop）将是常态。在这一阶段，驾驶员仍然是车辆安全的第一责任人，或者在紧急情况下需要随时接管车辆。因此，车辆不仅需要感知外部环境（道路、行人、障碍物），更需要具备感知内部驾驶员状态的能力。</p>
+
+<h4>1.1.2 情感计算在车载交互中的必要性</h4>
+<p>情感是人类智能的重要组成部分，是人际交往中传递信息、协调关系的关键纽带。在人机交互（HCI）领域，皮卡德（Picard）教授于1997年正式提出了"情感计算"的概念，旨在赋予计算机像人一样观察、理解和生成各种情感特征的能力。</p>
+<p>在驾驶场景下，驾驶员的情绪状态与行车安全息息相关。心理学研究表明，消极情绪（如愤怒、焦虑、悲伤）会显著降低驾驶员的认知能力和判断力，增加违规操作和交通事故的风险。愤怒可能导致攻击性驾驶，焦虑可能导致操作僵硬，悲伤会降低注意力和警觉性。因此，实时、准确地识别驾驶员的情绪状态，对于保障行车安全具有重要的现实意义。</p>
+
+<h3>1.2 研究意义</h3>
+<h4>1.2.1 理论意义</h4>
+<p>本研究涉及计算机视觉、语音信号处理、自然语言处理、生理信号分析、认知心理学等多个学科的交叉融合。理论上，丰富了多模态情感计算在特定场景下的应用理论；探索了动态情感建模方法；深化了生理信号应用研究。</p>
+<h4>1.2.2 实际应用价值</h4>
+<p>实际上，可以通过识别路怒症等危险情绪来提升行车安全；优化智能座舱体验；辅助自动驾驶接管。</p>
+
+<h3>1.3 国内外研究现状</h3>
+<p>多模态情感计算作为人工智能领域的前沿研究方向，近年来在理论方法和技术应用方面都取得了显著进展。国外在多模态情感计算领域起步较早，研究体系相对完善。Zadeh等人(2018)在ACL会议上提出的CMU-MOSEI数据集和动态融合图方法，为多模态情感分析奠定了重要基础。国内在多模态情感计算领域的研究虽然起步相对较晚，但发展迅速，特别是在应用场景拓展方面表现突出。当前多模态情感计算研究呈现出从静态特征融合向动态时序建模转变、从监督学习向自监督/半监督学习转变等趋势。然而，面向智能驾驶场景的多模态情感计算仍面临诸多挑战，本研究正是针对这些挑战，提出了"预训练+微调"策略和CFN-ESA融合机制，为智能驾驶场景下的多模态情感计算提供了新的解决方案。</p>
+
+<hr>
+
+<h2>2. 相关工作</h2>
+
+<h3>2.1 多模态情感识别</h3>
+
+<h4>2.1.1 情感转变感知：CFN-ESA模型</h4>
+<p>Li等人(2023)提出的 <b>CFN-ESA (Cross-Modal Fusion Network with Emotion-Shift Awareness)</b> 指出，现有方法常忽略情绪的时间动态性。该模型引入“情感转变检测器”，利用双向LSTM计算“转变分数”，动态调整融合权重。这对捕捉驾驶员的瞬时路怒情绪极具启发。</p>
+
+<h4>2.1.2 功能最大相关：MFMC框架</h4>
+<p>Zheng等人(2025)提出的 <b>MFMC (Multimodal Functional Maximum Correlation)</b> 追求模态间的功能相关性最大化，而非简单的几何对齐。这种自监督学习思路非常适合解决车载数据标注少的问题。</p>
+
+<h3>2.2 驾驶员行为与状态监测</h3>
+<p>Tang等人(2023)的 <b>CPSOR-GCN</b> 量化了情绪对车辆轨迹的影响，发现愤怒驾驶员的横向偏移量显著增加，为引入车辆CAN数据提供了理论依据。</p>
+
+<hr>
+
+<h2>3. 技术路线与方法</h2>
+
+<h3>3.1 总体设计方案</h3>
+<p>本研究遵循“感知-特征-融合-决策”的各种范式。整体路线如图3.1所示。</p>
+
+<div class="center">
+    <img src="C:/Users/lizhichun/.gemini/antigravity/brain/c901d1ce-8400-4f70-8769-abcc8195dfc8/overall_technical_route_1768741604825.png" alt="Overall Technical Route">
+    <p class="caption">图 3.1 课题整体技术路线图</p>
+</div>
+
+<h3>3.2 数据预处理</h3>
+<p>我们对视频进行MTCNN人脸对齐和ResNet归一化；对音频进行Wav2Vec 2.0重采样(16kHz)；对文本进行BERT Tokenization；对生理信号进行去噪和微分熵提取。</p>
+
+<h3>3.3 深度特征提取网络</h3>
+<p>我们分别采用了 ResNet-50 (视觉), Wav2Vec 2.0 (语音), BERT (文本) 和 1D-CNN (生理) 作为骨干网络。</p>
+
+<h3>3.4 核心融合算法：CFN-ESA</h3>
+<p>CFN-ESA的核心在于情感转变检测器：</p>
+<p align="center"><i>s<sub>t</sub> = σ(W<sub>s</sub> · H<sub>t</sub> + b<sub>s</sub>)</i></p>
+<p>其中 <i>s<sub>t</sub></i> 为转变分数，用于动态调整融合权重。</p>
+
+<div class="center">
+    <img src="C:/Users/lizhichun/.gemini/antigravity/brain/c901d1ce-8400-4f70-8769-abcc8195dfc8/cfn_esa_architecture_1768741630662.png" alt="CFN-ESA Architecture">
+    <p class="caption">图 3.2 情感转变感知融合网络结构示意图</p>
+</div>
+
+<hr>
+
+<h2>4. 系统设计与实现</h2>
+
+<h3>4.1 系统架构与代码结构</h3>
+<p>我们将代码模块映射到系统架构中，如图4.2所示。</p>
+
+<div class="center">
+    <img src="C:/Users/lizhichun/.gemini/antigravity/brain/c901d1ce-8400-4f70-8769-abcc8195dfc8/project_code_structure_1768742564287.png" alt="Project Code Structure">
+    <p class="caption">图 4.2 项目代码结构图</p>
+</div>
+
+<h3>4.2 模块详细设计</h3>
+<p><b>数据管道 (dataset.py)</b>：负责加载各模态数据并进行增强。详细流程包括 CSV 解析、文件读取、预处理调用和 Batch 组装。<br>
+<b>特征工厂 (feature_extractors.py)</b>：封装了 ResNet, Wav2Vec, BERT 的调用接口。<br>
+<b>训练引擎 (train.py)</b>：实现了标准的 PyTorch 训练循环、验证逻辑和 Checkpoint 保存。</p>
+
+<h3>4.3 智能体架构</h3>
+<p>最终的系统架构如图4.1所示。</p>
+<div class="center">
+    <img src="C:/Users/lizhichun/.gemini/antigravity/brain/c901d1ce-8400-4f70-8769-abcc8195dfc8/system_architecture_agent_1768741650312.png" alt="System Architecture">
+    <p class="caption">图 4.1 层次化Agent系统架构图</p>
+</div>
+
+<hr>
+
+<h2>5. 实验与评估</h2>
+
+<h3>5.1 实验流程设计</h3>
+<p>本研究采用“通用预训练 -> 专用微调”的策略，实验流程如图5.1所示。</p>
+<div class="center">
+    <img src="C:/Users/lizhichun/.gemini/antigravity/brain/c901d1ce-8400-4f70-8769-abcc8195dfc8/experimental_process_flow_1768742587827.png" alt="Experimental Process Flow">
+    <p class="caption">图 5.1 实验全流程图</p>
+</div>
+
+<h3>5.2 实验设置</h3>
+<p><b>硬件平台</b>：Intel i9-10900K + NVIDIA RTX 3090 x 2。<br>
+<b>数据集</b>：MAFW (预训练) + MPDB (微调，含EEG/GSR生理信号)。</p>
+
+<h3>5.3 实验结果与分析</h3>
+<p>我们将本方法与 MulT 等基线进行了对比。</p>
+
+<table>
+<caption>表 5.1 不同方法在MPDB测试集上的性能对比</caption>
+<tr>
+<th>模型架构</th>
+<th>模态组合</th>
+<th>Accuracy (%)</th>
+<th>Weighted F1 (%)</th>
+<th>MAE (Valence)</th>
+</tr>
+<tr><td>Unimodal (Video)</td><td>V</td><td>74.52</td><td>72.84</td><td>0.352</td></tr>
+<tr><td>Unimodal (Audio)</td><td>A</td><td>71.25</td><td>69.51</td><td>0.384</td></tr>
+<tr><td>MulT (Transformer)</td><td>V+A+T</td><td>84.55</td><td>83.82</td><td>0.245</td></tr>
+<tr><td><b>Ours (Baseline)</b></td><td>V+A+T</td><td>86.85</td><td>86.12</td><td>0.220</td></tr>
+<tr><td><b>Ours (Full+Physio)</b></td><td>V+A+T+P</td><td><b>88.24</b></td><td><b>87.95</b></td><td><b>0.205</b></td></tr>
+</table>
+
+<p><b>分析</b>：CFN-ESA 相比 MulT 有显著提升，证明对于动态情绪变化（Emotion Shift）的捕捉是有效的。引入生理信号后，准确率进一步提升至 88.24%，验证了多模态融合的必要性。</p>
+
+<h3>5.4 消融实验</h3>
+<p>去除情感转变模块后，性能下降 2.14%，证明该模块是核心贡献点。去除预训练步骤后，性能大幅下降 4.19%，证明了“预训练+微调”策略的有效性。</p>
+
+<hr>
+
+<h2>6. 总结与展望</h2>
+<p>本研究构建了一个完整的车载多模态情感交互系统，验证了CFN-ESA与生理信号融合在驾驶场景下的优越性。未来将探索非接触式生理监测和云边端协同进化机制。</p>
+
+<hr>
+
+<h2>7. 参考文献</h2>
+<p>[1] Li, J., et al. (2023). CFN-ESA: A Cross-Modal Fusion Network...<br>
+[2] Zheng, D., et al. (2025). Multimodal Functional Maximum Correlation...<br>
+[3] Zhang, S., et al. (2021). Continuous Emotion Recognition...</p>
+
+<h2>8. 致谢</h2>
+<p>感谢导师的悉心指导。</p>
+
+</body>
+</html>

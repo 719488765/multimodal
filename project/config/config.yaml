@@ -1,0 +1,119 @@
+# 模型配置
+model:
+  # 特征提取器配置
+  video:
+    backbone: "resnet50"
+    pretrained: true
+    feature_dim: 2048
+    output_dim: 512
+    
+  audio:
+    backbone: "wav2vec2-base"
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+    
+  physiological:
+    input_dim: 64  # EEG/ECG/GSR特征维度
+    hidden_dim: 256
+    num_layers: 2
+    output_dim: 512
+    use_lstm: true
+    
+  text:
+    backbone: "bert-base-uncased"
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+    
+  # 注意力融合配置
+  attention:
+    num_heads: 8
+    hidden_dim: 512
+    num_layers: 3
+    dropout: 0.1
+    # 融合策略选择: standard, emotion_shift, leader_follower, two_stage
+    fusion_strategy: "emotion_shift"  # 推荐使用emotion_shift（CFN-ESA方法）
+    leader_modal: "text"  # 领导-跟随注意力中的领导模态
+    num_gat_layers: 2  # 两阶段融合中GAT层数
+    # 功能最大相关损失（用于预训练）
+    use_fmc_loss: false  # 预训练阶段建议开启
+    fmc_projections: 64
+    fmc_weight: 0.1
+    
+  # 输出层配置
+  output:
+    emotion_classes: 7  # 情绪类别数：快乐、悲伤、愤怒、恐惧、中性、焦虑、其他
+    emotion_dimensions: 2  # 效价和唤醒度
+    use_trend_prediction: true
+
+# 训练配置
+training:
+  batch_size: 16
+  num_epochs: 50
+  learning_rate: 1e-4
+  weight_decay: 1e-5
+  warmup_steps: 1000
+  gradient_clip: 1.0
+  
+  # 优化器
+  optimizer: "adamw"
+  scheduler: "cosine"
+  
+  # 损失函数权重
+  loss_weights:
+    classification: 1.0
+    regression: 0.5
+    trend: 0.3
+    
+  # 预训练+微调
+  pretrain:
+    enabled: true
+    datasets: ["MAFW", "AffectNet", "IEMOCAP"]
+    epochs: 20
+    
+  finetune:
+    enabled: true
+    datasets: ["MPDB"]
+    epochs: 30
+    freeze_backbone: false
+
+# 数据配置
+data:
+  root_dir: "data/"
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  
+  # 数据预处理
+  video:
+    fps: 30
+    frame_size: 224
+    num_frames: 16
+    
+  audio:
+    sample_rate: 16000
+    duration: 3.0  # 秒
+    
+  physiological:
+    sampling_rate: 128
+    window_size: 5.0  # 秒
+
+# 路径配置
+paths:
+  checkpoint_dir: "checkpoints/"
+  log_dir: "logs/"
+  output_dir: "outputs/"
+
+# 设备配置
+device: "cuda"  # "cuda" or "cpu"
+num_workers: 4
+pin_memory: true
+
+# 实验管理
+experiment:
+  name: "multimodal_emotion_recognition"
+  project: "driver_emotion_analysis"
+  use_wandb: false
+  use_tensorboard: true
+
