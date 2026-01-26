@@ -69,7 +69,8 @@ training:
   # 预训练+微调
   pretrain:
     enabled: true
-    datasets: ["MAFW", "AffectNet", "IEMOCAP"]
+    # 支持开源数据集：CREMA-D, MELD, CMU-MOSEI
+    datasets: ["CREMA-D", "MELD", "CMU-MOSEI"]
     epochs: 20
     
   finetune:
@@ -77,6 +78,52 @@ training:
     datasets: ["MPDB"]
     epochs: 30
     freeze_backbone: false
+
+# 数据集配置
+# 定义不同数据集的情感类别映射和特定配置
+datasets:
+  crema:
+    # CREMA-D数据集配置
+    emotion_classes: 6  # Happy, Sad, Angry, Fear, Disgust, Neutral
+    emotion_map:
+      happy: 0
+      sad: 1
+      angry: 2
+      fear: 3
+      disgust: 4
+      neutral: 5
+    video_format: ".flv"  # CREMA-D使用FLV格式
+    has_physiological: false  # CREMA-D不包含生理信号
+  
+  meld:
+    # MELD数据集配置
+    emotion_classes: 7  # Anger, Disgust, Sadness, Joy, Neutral, Surprise, Fear
+    emotion_map:
+      joy: 0      # 映射到happy
+      sadness: 1 # 映射到sad
+      anger: 2    # 映射到angry
+      fear: 3     # 映射到fear
+      neutral: 4  # 映射到neutral
+      surprise: 5 # 映射到anxious（临时）
+      disgust: 6  # 映射到other（临时）
+    video_format: ".mp4"  # MELD使用MP4格式
+    has_physiological: false  # MELD不包含生理信号
+    has_text: true  # MELD包含文本标注
+  
+  mosei:
+    # CMU-MOSEI数据集配置
+    emotion_classes: 7  # 使用标准7类映射
+    emotion_map:
+      happy: 0
+      sad: 1
+      angry: 2
+      fear: 3
+      neutral: 4
+      surprise: 5
+      disgust: 6
+    video_format: ".mp4"  # CMU-MOSEI使用MP4格式
+    has_physiological: false  # CMU-MOSEI不包含生理信号
+    has_text: true  # CMU-MOSEI包含文本标注
 
 # 数据配置
 data:

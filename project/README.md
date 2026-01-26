@@ -265,17 +265,62 @@ python scripts/inference.py \
 
 ## 数据集
 
-### 预训练阶段
-- **MAFW**：多模态情感数据库（面部+语音）
-- **AffectNet**：大规模面部表情数据库
-- **IEMOCAP**：交互式情感对话数据库
+### 预训练阶段（开源数据集）
+
+项目已适配以下开源数据集，可直接使用：
+
+1. **CREMA-D**：多模态情感数据集
+   - **规模**：91名演员，6种情感类别（Happy, Sad, Angry, Fear, Disgust, Neutral）
+   - **模态**：视频（.flv格式）+ 音频 + 文本 + 标签
+   - **获取方式**：Kaggle（详见 `use_data.md` 4.4节）
+   - **特点**：文件名包含情感标签信息，支持自动解析
+
+2. **MELD**：多模态情感对话数据集
+   - **规模**：13,000+ 对话片段，7种情感类别
+   - **模态**：视频（.mp4格式）+ 音频 + 文本 + 标签
+   - **获取方式**：GitHub开源（详见 `use_data.md` 4.5节）
+   - **特点**：包含对话场景的多模态情感，适合预训练
+
+3. **CMU-MOSEI**：大规模多模态情感数据集
+   - **规模**：3,228条视频，来自1,000位YouTube用户
+   - **模态**：视频 + 语音 + 文本 + 标签
+   - **获取方式**：Kaggle或官方SDK（详见 `use_data.md` 4.6节）
+   - **特点**：大规模数据，适合大规模预训练
 
 ### 微调阶段
 - **MPDB**：多模态生理驾驶员行为数据库（生理信号）
 - **DEFE**：驾驶员情感面部表情数据集（如可获得）
 
+### 数据集适配特性
+
+项目已实现以下适配功能：
+
+1. **多格式支持**：
+   - 视频格式：`.mp4`, `.avi`, `.mov`, `.mkv`, `.flv`
+   - 音频格式：`.wav`, `.mp3`, `.flac`, `.m4a`
+   - 自动识别文件扩展名，支持动态格式匹配
+
+2. **数据集特定配置**：
+   - 自动检测数据集类型（通过文件命名前缀）
+   - 支持数据集特定的情感类别映射
+   - 动态调整模型输出类别数
+
+3. **缺失模态处理**：
+   - 自动处理缺失的模态（如生理信号）
+   - 使用零填充或跳过处理
+
+4. **训练时数据集选择**：
+   ```bash
+   # 指定数据集训练
+   python scripts/train.py --config config/config.yaml --mode pretrain --dataset crema
+   python scripts/train.py --config config/config.yaml --mode pretrain --dataset meld
+   
+   # 自动检测数据集（默认）
+   python scripts/train.py --config config/config.yaml --mode pretrain
+   ```
+
 详细的数据集获取方法和使用指南请参考：
-- `../dataset_application_guide.md`：数据集应用指南
+- `use_data.md`：详细的数据集使用手册（包含下载、整理、适配说明）
 - `../links.txt`：数据集链接和获取方式
 
 ---

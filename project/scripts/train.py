@@ -146,6 +146,7 @@ def main():
     parser.add_argument('--config', type=str, required=True, help='配置文件路径 (config.yaml)')
     parser.add_argument('--mode', type=str, default='pretrain', choices=['pretrain', 'finetune'], help='训练模式')
     parser.add_argument('--resume', type=str, default=None, help='恢复训练的检查点路径')
+    parser.add_argument('--dataset', type=str, default=None, help='指定数据集名称 (crema, meld, mosei)，如果不指定则自动检测')
     args = parser.parse_args()
 
     # 1. 加载配置
@@ -155,25 +156,49 @@ def main():
     device = setup_device(config)
     logger.info(f"Using device: {device}")
 
-    # 3. 数据加载
+    # 3. 数据集选择和配置调整
+    datasets_config = config.get('datasets', {})
+    
+    # 如果指定了数据集，调整模型输出类别数
+    if args.dataset and args.dataset.lower() in datasets_config:
+        dataset_name = args.dataset.lower()
+        dataset_config = datasets_config[dataset_name]
+        emotion_classes = dataset_config.get('emotion_classes', 7)
+        logger.info(f"Using dataset: {dataset_name.upper()}, emotion classes: {emotion_classes}")
+        
+        # 更新模型配置中的情感类别数
+        config['model']['output']['emotion_classes'] = emotion_classes
+    else:
+        logger.info("No specific dataset specified, using default configuration")
+        logger.info("Dataset will be auto-detected from file naming patterns")
+
+    # 4. 数据加载
     data_dir = config['data']['root_dir']
     batch_size = config['training']['batch_size']
     
-    # 根据模式选择数据集路径或split（此处需根据实际数据集逻辑调整）
-    # 假设finetune使用不同的数据目录
+    # 根据模式选择数据集路径或split
     if args.mode == 'finetune':
         logger.info("Starting Fine-tuning mode...")
-        # config['data']['root_dir'] = 'data/mpdb/'  # 示例修改
-        train_dataset = MultimodalDataset(data_dir, split='train', config=config) # 实际应可能不同
+        # 微调模式可以使用不同的数据目录
+        finetune_datasets = config['training']['finetune'].get('datasets', [])
+        if finetune_datasets:
+            logger.info(f"Fine-tuning datasets: {finetune_datasets}")
+        train_dataset = MultimodalDataset(data_dir, split='train', config=config)
     else:
         logger.info("Starting Pre-training mode...")
+        # 预训练模式支持多个数据集
+        pretrain_datasets = config['training']['pretrain'].get('datasets', [])
+        if pretrain_datasets:
+            logger.info(f"Pre-training datasets: {pretrain_datasets}")
         train_dataset = MultimodalDataset(data_dir, split='train', config=config)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
     val_dataset = MultimodalDataset(data_dir, split='val', config=config)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+    
+    logger.info(f"Training samples: {len(train_dataset)}, Validation samples: {len(val_dataset)}")
 
-    # 4. 模型初始化
+    # 5. 模型初始化（使用更新后的配置）
     model = MultimodalEmotionModel(config).to(device)
 
     # 5. 为了微调，冻结部分层（如果是finetune模式）
