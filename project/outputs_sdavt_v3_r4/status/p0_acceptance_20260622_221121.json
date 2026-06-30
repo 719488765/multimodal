@@ -1,0 +1,75 @@
+{
+  "timestamp": "2026-06-22T22:11:21",
+  "all_done": false,
+  "all_pass": false,
+  "p0_count": 6,
+  "done_count": 3,
+  "checks": [
+    {
+      "id": "F_C_TS",
+      "status": "done",
+      "run_dir": "SDAVT_R4_F_C_TS_20260622_140751",
+      "pass": true,
+      "issues": [],
+      "best_val_f1": 0.257899,
+      "best_val_acc": 0.283602,
+      "epochs": 28
+    },
+    {
+      "id": "F_M_STD",
+      "status": "done",
+      "run_dir": "SDAVT_R4_F_M_STD_20260622_140751",
+      "pass": true,
+      "issues": [],
+      "best_val_f1": 0.459452,
+      "best_val_acc": 0.499097,
+      "epochs": 13
+    },
+    {
+      "id": "F_M_TS",
+      "status": "done",
+      "run_dir": "SDAVT_R4_F_M_TS_20260622_163603",
+      "pass": true,
+      "issues": [],
+      "best_val_f1": 0.382593,
+      "best_val_acc": 0.436823,
+      "epochs": 18
+    },
+    {
+      "id": "F_O_LFT",
+      "status": "running",
+      "run_dir": null,
+      "pass": false,
+      "issues": [
+        "status=running (not done)"
+      ],
+      "best_val_f1": null,
+      "best_val_acc": null,
+      "epochs": 0
+    },
+    {
+      "id": "F_O_STD",
+      "status": "pending",
+      "run_dir": null,
+      "pass": false,
+      "issues": [
+        "status=pending (not done)"
+      ],
+      "best_val_f1": null,
+      "best_val_acc": null,
+      "epochs": 0
+    },
+    {
+      "id": "F_O_TS",
+      "status": "pending",
+      "run_dir": null,
+      "pass": false,
+      "issues": [
+        "status=pending (not done)"
+      ],
+      "best_val_f1": null,
+      "best_val_acc": null,
+      "epochs": 0
+    }
+  ]
+}

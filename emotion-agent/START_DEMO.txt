@@ -1,0 +1,253 @@
+================================================================================
+  Emotion Agent 完整演示启动指南
+  路径: multimodal/emotion-agent/
+  更新: 2026-05-27
+================================================================================
+
+【架构概览】
+
+  组件              端口    说明
+  ─────────────────────────────────────────────────────────
+  ASR (Whisper)     9010    语音转写，asr-local
+  情绪后端+前端     8000    FastAPI + 静态页面（单端口，推荐）
+  Ollama (LLM)      11434   生成式助手回复 qwen2.5:7b-instruct
+  GPU               —       情绪模型推理（RTX 4090，conda myenv310）
+
+  演示推荐：浏览器只访问 http://127.0.0.1:8000
+  不要用 5173（Vite dev 在远程端口转发下大请求易失败）
+
+
+================================================================================
+一、一次性环境准备（首次或换机器时执行）
+================================================================================
+
+1) 激活 conda 环境（与训练工程一致）
+
+   conda activate myenv310
+
+2) 安装后端依赖
+
+   cd /home/lizhichun_24/sda1/code/multimodal/emotion-agent/backend
+   pip install -r requirements.txt
+
+3) 安装 ASR 依赖（独立 venv，首次）
+
+   cd /home/lizhichun_24/sda1/code/multimodal/emotion-agent/asr-local
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+
+   # 系统需 ffmpeg（解码浏览器 webm/wav）
+   sudo apt-get update && sudo apt-get install -y ffmpeg
+
+4) 安装前端依赖（首次）
+
+   cd /home/lizhichun_24/sda1/code/multimodal/emotion-agent/frontend
+   npm install
+
+5) 安装并拉取 Ollama 模型（首次约 4.7GB）
+
+   cd /home/lizhichun_24/sda1/code/multimodal/emotion-agent
+   chmod +x scripts/start_ollama.sh
+   ./scripts/start_ollama.sh
+
+6) 确认 backend/.env 已配置（通常无需改）
+
+   cd /home/lizhichun_24/sda1/code/multimodal/emotion-agent/backend
+   grep -E '^(MODEL_PROVIDER|ASR_PROVIDER|LLM_PROVIDER)' .env
+
+   期望：
+     MODEL_PROVIDER=current
+     ASR_PROVIDER=whisper_api
+     LLM_PROVIDER=ollama
+
+
+================================================================================
+二、每次演示启动（3 个终端，按顺序）
+================================================================================
+
+─── 终端 1：Ollama（若已在跑可跳过）────────────────────────────────────────
+
+   cd /home/lizhichun_24/sda1/code/multimodal/emotion-agent
+   ./scripts/start_ollama.sh
+
+   验证：
+   curl -s http://127.0.0.1:11434/api/tags | head -5
+
+
+─── 终端 2：ASR 语音转写（9010）────────────────────────────────────────────
+
+   cd /home/lizhichun_24/sda1/code/multimodal/emotion-agent/asr-local
+   ./start_server.sh
+
+   看到：Starting ASR http://0.0.0.0:9010 model=small device=cpu
+
+   验证（另开 shell 或 Ctrl+Shift+`）：
+   curl -s http://127.0.0.1:9010/health
+
+
+─── 终端 3：情绪后端 + 前端页面（8000，单端口）──────────────────────────────
+
+   cd /home/lizhichun_24/sda1/code/multimodal/emotion-agent
+   ./scripts/start_demo.sh
+
+   脚本会自动：npm run build → 启动 uvicorn @8000 → 托管 frontend/dist
+
+   若 8000 已在运行且健康，脚本会提示直接打开浏览器，不会重复启动。
+   若要强制重启：
+   FORCE_RESTART=1 ./scripts/start_demo.sh
+
+   启动约 1–2 分钟（加载 checkpoint 到 GPU）。
+   看到：Uvicorn running on http://0.0.0.0:8000
+
+
+================================================================================
+三、可选：tmux 一键启动（3 窗口）
+================================================================================
+
+   cd /home/lizhichun_24/sda1/code/multimodal/emotion-agent
+   ./scripts/start_all_demo.sh
+
+   进入会话：  tmux attach -t emotion-demo
+   切换窗口：  Ctrl+b 然后按 0 / 1 / 2
+   退出会话：  Ctrl+b 然后按 d（服务继续跑）
+   停止全部：  ./scripts/stop_all_demo.sh
+
+
+================================================================================
+四、Cursor / 远程 SSH 端口转发
+================================================================================
+
+  在 Cursor 底部「端口 / Ports」面板：
+    · 转发 8000（必须，浏览器访问页面+API）
+    · 9010、11434 一般不需要转发（仅服务器本机调用）
+
+  Windows 本机浏览器打开：
+    http://127.0.0.1:8000
+
+  硬刷新（Ctrl+F5）避免加载旧版 JS。
+
+
+================================================================================
+五、启动后自检（复制粘贴）
+================================================================================
+
+   # 1. ASR
+   curl -s http://127.0.0.1:9010/health | python3 -m json.tool
+
+   # 2. 后端全链路健康（四项都应 true）
+   curl -s http://127.0.0.1:8000/api/v1/health | python3 -m json.tool
+
+   期望字段：
+     ok: true
+     using_trained_checkpoint: true
+     asr_ok: true
+     llm_ok: true
+     model.provider: "current"
+     model.loaded: true
+
+   # 3. 训练模型状态
+   cd /home/lizhichun_24/sda1/code/multimodal/emotion-agent/backend
+   ./scripts/verify_trained_model.sh http://127.0.0.1:8000
+
+
+================================================================================
+六、浏览器演示操作流程
+================================================================================
+
+  1. 打开 http://127.0.0.1:8000
+  2. 等待顶部状态：API 就绪 · ASR ✓ · LLM ✓ · 模型 checkpoint ✓
+  3. 点击「启用摄像头与麦克风」，授权浏览器
+  4. 对着麦克风说话 1–3 秒（可输入上下文文本，可选）
+  5. 点击「结束采集并推理」
+  6. 查看：
+     · ASR 识别文本（asr_provider 应为 whisper_api，非 mock）
+     · 情绪标签 + Top3 概率（inference_source 应为 checkpoint）
+     · 助手回复（llm_provider 应为 ollama，非 template）
+
+  Network 面板成功时应看到：
+     多个 POST /api/v1/emotion/upload-chunk（分块上传）
+     最后 POST /api/v1/emotion/infer-from-upload
+
+
+================================================================================
+七、停止服务
+================================================================================
+
+  各终端 Ctrl+C 停止对应进程。
+
+  或强制释放端口：
+   fuser -k 9010/tcp 2>/dev/null   # ASR
+   fuser -k 8000/tcp 2>/dev/null   # 后端
+   # Ollama 若为系统服务通常不需停
+
+  tmux 方式：
+   ./scripts/stop_all_demo.sh
+
+
+================================================================================
+八、常见问题
+================================================================================
+
+  Q: Failed to fetch / 无法连接情绪推理 API
+  A: ① 确认 8000 在跑且 health 200
+     ② 只用 http://127.0.0.1:8000，关闭 npm run dev (5173)
+     ③ Cursor Ports 转发 8000
+     ④ 硬刷新页面
+
+  Q: ASR 固定返回「我感觉还好，稍微有点紧张。」
+  A: ASR 仍在 mock。确认 asr-local 在 9010 运行，backend/.env 为 whisper_api
+
+  Q: 助手回复来源 template 而非 ollama
+  A: 运行 ./scripts/start_ollama.sh，health 中 llm_ok 应为 true
+
+  Q: 情绪总是 neutral、置信度低
+  A: 真实 checkpoint 行为；中文+单帧+短音频时常见。看 Top3 概率与 ASR 文本
+
+  Q: address already in use :8000
+  A: 若 health 正常直接打开浏览器；否则 FORCE_RESTART=1 ./scripts/start_demo.sh
+
+  Q: 终端显示 Killed
+  A: 端口被其他 start_demo 或 fuser 杀掉。重新按「二」启动，不要重复开多个 8000
+
+  Q: Command 'uvicorn' not found
+  A: 用 ./start_server.sh 或 conda activate myenv310 后 python -m uvicorn
+
+
+================================================================================
+九、快速命令速查
+================================================================================
+
+  # 最短启动（3 条，3 终端）
+  ./scripts/start_ollama.sh
+  cd asr-local && ./start_server.sh
+  cd .. && ./scripts/start_demo.sh
+
+  # 一键 tmux
+  ./scripts/start_all_demo.sh
+
+  # 健康检查
+  curl -s http://127.0.0.1:8000/api/v1/health | python3 -m json.tool
+
+  # 演示地址
+  http://127.0.0.1:8000
+
+  # 架构与数据流文档
+  docs/ARCHITECTURE.md
+  docs/IMPLEMENTATION_BATCHES.md
+
+  # bert-base-chinese 微调（GPU，三数据集，约 2–4 小时）
+  cd ../project
+  ./scripts/finetune_agent_chinese.sh
+  ./scripts/apply_agent_chinese_preset.sh
+  cd ../emotion-agent && FORCE_RESTART=1 ./scripts/start_demo.sh
+
+  # 公网生产部署（nginx HTTPS，避免 Cursor 转发导致 JPEG 回退）
+  ./scripts/build_production.sh
+  deploy/SERVER_DEPLOY.md
+
+  # Cursor 开发 vs 公网：
+  #   - 开发：http://127.0.0.1:8000（大 webm 可能回退 JPEG）
+  #   - 公网：VITE_DEPLOY_MODE=server，整包 multipart，保留 webm clip
+
+================================================================================

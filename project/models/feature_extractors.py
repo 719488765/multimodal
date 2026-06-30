@@ -11,8 +11,29 @@
 import torch
 import torch.nn as nn
 import torchvision.models as models
-from transformers import Wav2Vec2Model, Wav2Vec2Processor, BertModel, BertTokenizer  # type: ignore
+from transformers import AutoModel, AutoTokenizer, Wav2Vec2Model, Wav2Vec2Processor  # type: ignore
 import numpy as np
+
+from .precomputed_encoder import TemporalNpyEncoder
+
+
+def _freeze_pretrained_transformer(backbone: nn.Module, unfreeze_last_n: int = 0) -> None:
+    """冻结 HuggingFace 预训练骨干；可选解冻 encoder 最后 N 层（中文 Agent 微调）。"""
+    if hasattr(backbone, "gradient_checkpointing_disable"):
+        backbone.gradient_checkpointing_disable()
+    cfg = getattr(backbone, "config", None)
+    if cfg is not None and hasattr(cfg, "gradient_checkpointing"):
+        cfg.gradient_checkpointing = False
+    for param in backbone.parameters():
+        param.requires_grad = False
+    n = max(0, int(unfreeze_last_n or 0))
+    if n > 0 and hasattr(backbone, "encoder") and hasattr(backbone.encoder, "layer"):
+        for layer in backbone.encoder.layer[-n:]:
+            for param in layer.parameters():
+                param.requires_grad = True
+        backbone.train()
+    else:
+        backbone.eval()
 
 
 class VideoFeatureExtractor(nn.Module):
@@ -42,7 +63,16 @@ class VideoFeatureExtractor(nn.Module):
         >>> video_frames = torch.randn(2, 16, 3, 224, 224)  # 批次2，16帧，RGB，224x224
         >>> features = extractor(video_frames)  # 输出: (2, 16, 512)
     """
-    def __init__(self, backbone='resnet50', pretrained=True, feature_dim=2048, output_dim=512):
+    def __init__(
+        self,
+        backbone='resnet50',
+        pretrained=True,
+        feature_dim=2048,
+        output_dim=512,
+        input_type='auto',
+        max_seq_len=32,
+        temporal_hidden_dim=256,
+    ):
         """
         初始化视频特征提取器
         
@@ -51,28 +81,47 @@ class VideoFeatureExtractor(nn.Module):
             pretrained (bool): 是否使用ImageNet预训练权重，建议设为True
             feature_dim (int): ResNet-50的特征维度，固定为2048
             output_dim (int): 输出特征维度，默认512，用于与其他模态对齐
+            input_type (str): 'auto' | 'cnn' | 'npy' — MOSEI OpenFace 预提取特征用 npy
         """
         super(VideoFeatureExtractor, self).__init__()
         
-        # 加载预训练的ResNet-50
-        # ResNet-50在ImageNet上预训练，能够提取通用的视觉特征
-        if backbone == 'resnet50':
-            resnet = models.resnet50(pretrained=pretrained)
-            # 移除最后的分类层（fc层），只保留特征提取部分
-            # resnet.children()返回所有子模块，[:-1]表示除了最后一个（分类层）之外的所有层
-            self.backbone = nn.Sequential(*list(resnet.children())[:-1])
-            backbone_dim = 2048  # ResNet-50的最终特征维度
-        else:
-            raise ValueError(f"Unsupported backbone: {backbone}")
-        
-        # 投影层，将ResNet-50的2048维特征投影到统一的output_dim维度
-        # 这样所有模态的特征维度一致，便于后续融合
-        self.projection = nn.Sequential(
-            nn.AdaptiveAvgPool2d((1, 1)),  # 全局平均池化，将特征图池化为1x1
-            nn.Flatten(),                  # 展平为1D向量
-            nn.Linear(backbone_dim, output_dim),  # 线性投影到目标维度
-            nn.ReLU(),                     # 激活函数
-            nn.Dropout(0.1)                # Dropout防止过拟合
+        self.feature_dim = feature_dim
+        self.output_dim = output_dim
+        self.input_type = input_type
+        self.max_seq_len = int(max_seq_len or 32)
+
+        self.backbone = None
+        self.cnn_projection = None
+        if input_type != 'npy':
+            if backbone == 'resnet50':
+                resnet = models.resnet50(pretrained=pretrained)
+                self.backbone = nn.Sequential(*list(resnet.children())[:-1])
+                backbone_dim = 2048
+            else:
+                raise ValueError(f"Unsupported backbone: {backbone}")
+
+            self.cnn_projection = nn.Sequential(
+                nn.AdaptiveAvgPool2d((1, 1)),
+                nn.Flatten(),
+                nn.Linear(backbone_dim, output_dim),
+                nn.ReLU(),
+                nn.Dropout(0.1)
+            )
+
+        # MOSEI OpenFace2 (B,T,713) 等预提取特征
+        self.temporal_encoder = TemporalNpyEncoder(
+            input_dim=self.feature_dim,
+            output_dim=output_dim,
+            hidden_dim=temporal_hidden_dim,
+            max_seq_len=self.max_seq_len,
+            num_layers=1,
+            dropout=0.1,
+        )
+        self.feature_projection = nn.Sequential(
+            nn.LayerNorm(self.feature_dim),
+            nn.Linear(self.feature_dim, output_dim),
+            nn.ReLU(),
+            nn.Dropout(0.1),
         )
         
     def forward(self, video_frames):
@@ -96,26 +145,49 @@ class VideoFeatureExtractor(nn.Module):
             4. 通过投影层统一维度
             5. 如果是时序，恢复时间维度
         """
+        # npy 模式：时序 BiLSTM 编码
+        if self.input_type == 'npy':
+            if len(video_frames.shape) in (2, 3):
+                return self.temporal_encoder(video_frames, return_pooled=False)
+
+        # 情况1：时序视频帧 (B, T, C, H, W)
         if len(video_frames.shape) == 5:
-            # 处理时序视频 (B, T, C, H, W)
             B, T, C, H, W = video_frames.shape
-            # 将时间维度合并到批次维度，方便批量处理
-            # (B, T, C, H, W) -> (B*T, C, H, W)
             video_frames = video_frames.view(B * T, C, H, W)
-            
-            # 通过ResNet-50提取特征
-            features = self.backbone(video_frames)  # (B*T, 2048, H', W')
-            # 通过投影层统一维度
-            features = self.projection(features)  # (B*T, output_dim)
-            # 恢复时间维度
-            features = features.view(B, T, -1)  # (B, T, output_dim)
-        else:
-            # 处理单帧图像 (B, C, H, W)
-            # 直接通过骨干网络和投影层
-            features = self.backbone(video_frames)  # (B, 2048, H', W')
-            features = self.projection(features)  # (B, output_dim)
+            features = self.backbone(video_frames)              # (B*T, 2048, H', W')
+            features = self.cnn_projection(features)            # (B*T, output_dim)
+            features = features.view(B, T, -1)                  # (B, T, output_dim)
+            return features
         
-        return features
+        # 情况2：单帧图像 (B, C, H, W)
+        if len(video_frames.shape) == 4 and video_frames.shape[1] == 3:
+            features = self.backbone(video_frames)              # (B, 2048, H', W')
+            features = self.cnn_projection(features)            # (B, output_dim)
+            return features
+        
+        # 情况3：特征序列 (B, T, F) - 例如 MOSEI 的 OpenFace2 特征
+        if len(video_frames.shape) == 3:
+            B, T, F = video_frames.shape
+            if F != self.feature_dim:
+                raise ValueError(
+                    f"Video feature dim {F} != expected {self.feature_dim}"
+                )
+            x = video_frames.view(B * T, F)
+            x = self.feature_projection(x)
+            x = x.view(B, T, -1)
+            return x
+        
+        # 情况4：特征向量 (B, F)
+        if len(video_frames.shape) == 2:
+            F = video_frames.shape[-1]
+            if F != self.feature_dim:
+                raise ValueError(
+                    f"Video feature dim {F} != expected {self.feature_dim}"
+                )
+            return self.feature_projection(video_frames)
+        
+        # 其他情况：返回 None，交由上游处理
+        return None
 
 
 class AudioFeatureExtractor(nn.Module):
@@ -143,7 +215,16 @@ class AudioFeatureExtractor(nn.Module):
         >>> audio = torch.randn(2, 48000)  # 批次2，采样率16000的3秒音频
         >>> features = extractor(audio)  # 输出: (2, 512)
     """
-    def __init__(self, backbone='facebook/wav2vec2-base', pretrained=True, output_dim=512):
+    def __init__(
+        self,
+        backbone='facebook/wav2vec2-base',
+        pretrained=True,
+        output_dim=512,
+        precomputed_feature_dim=74,
+        audio_mode='auto',
+        max_seq_len=32,
+        temporal_hidden_dim=256,
+    ):
         """
         初始化音频特征提取器
         
@@ -151,23 +232,40 @@ class AudioFeatureExtractor(nn.Module):
             backbone (str): Wav2Vec2模型名称，默认'facebook/wav2vec2-base'
             pretrained (bool): 是否使用预训练权重，建议设为True
             output_dim (int): 输出特征维度，默认512
+            precomputed_feature_dim (int): MOSEI COVAREP 等预提取声学特征维度，默认74
         """
         super(AudioFeatureExtractor, self).__init__()
         
-        # 加载预训练的Wav2Vec2模型
-        # Wav2Vec2是Facebook开发的语音表示学习模型，在大量无标签语音数据上预训练
-        # 能够学习到语音的语义表示，对情感识别很有帮助
-        self.backbone = Wav2Vec2Model.from_pretrained(backbone) if pretrained else Wav2Vec2Model.from_pretrained(backbone)
-        self.processor = Wav2Vec2Processor.from_pretrained(backbone)  # 用于音频预处理
-        
-        # Wav2Vec2的输出维度（base模型为768维）
-        backbone_dim = self.backbone.config.hidden_size
-        
-        # 投影层，将Wav2Vec2的特征维度投影到统一的output_dim
-        self.projection = nn.Sequential(
-            nn.Linear(backbone_dim, output_dim),  # 线性投影
-            nn.ReLU(),                            # 激活函数
-            nn.Dropout(0.1)                       # Dropout防止过拟合
+        self.precomputed_feature_dim = int(precomputed_feature_dim or 74)
+        self.audio_mode = str(audio_mode or 'auto').lower()
+        self.max_seq_len = int(max_seq_len or 32)
+
+        self.backbone = None
+        self.processor = None
+        self.projection = None
+        if self.audio_mode != 'precomputed':
+            self.backbone = Wav2Vec2Model.from_pretrained(backbone) if pretrained else Wav2Vec2Model.from_pretrained(backbone)
+            self.processor = Wav2Vec2Processor.from_pretrained(backbone)
+            _freeze_pretrained_transformer(self.backbone)
+            backbone_dim = self.backbone.config.hidden_size
+            self.projection = nn.Sequential(
+                nn.Linear(backbone_dim, output_dim),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+            )
+
+        self.temporal_encoder = TemporalNpyEncoder(
+            input_dim=self.precomputed_feature_dim,
+            output_dim=output_dim,
+            hidden_dim=temporal_hidden_dim,
+            max_seq_len=self.max_seq_len,
+            num_layers=1,
+            dropout=0.1,
+        )
+        self.feature_projection = nn.Sequential(
+            nn.Linear(self.precomputed_feature_dim, output_dim),
+            nn.ReLU(),
+            nn.Dropout(0.1),
         )
         
     def forward(self, audio_waveform):
@@ -175,34 +273,37 @@ class AudioFeatureExtractor(nn.Module):
         前向传播，提取音频特征
         
         参数：
-            audio_waveform (torch.Tensor): (B, T) - 音频波形数据
-                - B: 批次大小
-                - T: 时间步数（采样点数），例如16000采样率*3秒=48000
+            audio_waveform (torch.Tensor):
+                - (B, T) 原始波形
+                - (B, T, F) 预提取声学特征（如 COVAREP，F=74）
         
         返回：
-            features (torch.Tensor): (B, output_dim) - 音频特征向量
-        
-        处理流程：
-            1. 通过Wav2Vec2提取时序特征（每个时间步都有特征）
-            2. 通过投影层统一维度
-            3. 使用时序平均池化得到固定长度的特征向量
+            features (torch.Tensor): (B, output_dim)
         """
-        # Wav2Vec2处理音频波形
-        # 使用torch.no_grad()可以节省内存，因为Wav2Vec2在推理时不需要梯度
-        with torch.no_grad():
-            outputs = self.backbone(audio_waveform)
-            # 使用最后一层的隐藏状态，包含最丰富的语义信息
-            # Wav2Vec2的输出是时序的，每个时间步都有特征
-            hidden_states = outputs.last_hidden_state  # (B, T, hidden_dim=768)
-        
-        # 投影到统一维度
-        features = self.projection(hidden_states)  # (B, T, output_dim=512)
-        
-        # 时序平均池化，将时序特征聚合为固定长度的向量
-        # 这是常用的时序特征聚合方法，也可以使用最大池化或注意力机制
-        features = torch.mean(features, dim=1)  # (B, output_dim=512)
-        
-        return features
+        if audio_waveform is None:
+            return None
+
+        # 预提取特征序列 (B, T, F) — 返回时序 (B, T', output_dim) 供融合对齐
+        if audio_waveform.dim() == 3:
+            if audio_waveform.shape[-1] != self.precomputed_feature_dim:
+                raise ValueError(
+                    f"precomputed audio feature dim {audio_waveform.shape[-1]} "
+                    f"!= expected {self.precomputed_feature_dim}"
+                )
+            seq_feats, pooled = self.temporal_encoder(audio_waveform, return_pooled=True)
+            return seq_feats if seq_feats.shape[1] > 1 else pooled
+
+        # 原始波形 (B, T)
+        if audio_waveform.dim() == 2:
+            if self.backbone is None:
+                return None
+            with torch.no_grad():
+                outputs = self.backbone(audio_waveform)
+                hidden_states = outputs.last_hidden_state
+            features = self.projection(hidden_states)
+            return torch.mean(features, dim=1)
+
+        return None
 
 
 class PhysiologicalFeatureExtractor(nn.Module):
@@ -353,7 +454,13 @@ class TextFeatureExtractor(nn.Module):
         >>> attention_mask = torch.ones(2, 128)
         >>> features = extractor(input_ids, attention_mask)  # 输出: (2, 512)
     """
-    def __init__(self, backbone='bert-base-uncased', pretrained=True, output_dim=512):
+    def __init__(
+        self,
+        backbone='bert-base-uncased',
+        pretrained=True,
+        output_dim=512,
+        unfreeze_encoder_layers: int = 0,
+    ):
         """
         初始化文本特征提取器
         
@@ -364,11 +471,10 @@ class TextFeatureExtractor(nn.Module):
         """
         super(TextFeatureExtractor, self).__init__()
         
-        # 加载预训练的BERT模型
-        # BERT是Google开发的预训练语言模型，在大量文本数据上预训练
-        # 能够理解文本的语义和上下文信息，对情绪识别很有帮助
-        self.backbone = BertModel.from_pretrained(backbone) if pretrained else BertModel.from_pretrained(backbone)
-        self.tokenizer = BertTokenizer.from_pretrained(backbone)  # 用于文本tokenization
+        self.backbone = AutoModel.from_pretrained(backbone)
+        self.tokenizer = AutoTokenizer.from_pretrained(backbone)
+        self.unfreeze_encoder_layers = max(0, int(unfreeze_encoder_layers or 0))
+        _freeze_pretrained_transformer(self.backbone, unfreeze_last_n=self.unfreeze_encoder_layers)
         
         # BERT的输出维度（base模型为768维）
         backbone_dim = self.backbone.config.hidden_size
@@ -405,15 +511,16 @@ class TextFeatureExtractor(nn.Module):
             - [CLS] token是BERT在序列开头添加的特殊token，其表示被训练为包含整个序列的语义信息
             - pooler_output是BERT对[CLS] token的表示进行进一步处理后的输出
         """
-        # BERT处理文本
-        # 使用torch.no_grad()可以节省内存，因为BERT在推理时不需要梯度
-        with torch.no_grad():
+        bert_trainable = any(p.requires_grad for p in self.backbone.parameters())
+        if bert_trainable:
             outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-            # BERT的输出包含：
-            # - last_hidden_state: (B, seq_len, hidden_dim) - 每个token的隐藏状态
-            # - pooler_output: (B, hidden_dim) - [CLS] token的池化表示（整个序列的语义）
-            # 使用pooler_output作为整个文本的语义表示
-            pooled_output = outputs.pooler_output  # (B, hidden_dim=768)
+        else:
+            with torch.no_grad():
+                outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
+        pooled_output = outputs.pooler_output
+        if pooled_output is None:
+            # RoBERTa 等模型无 pooler；使用 [CLS] / 首 token 表示
+            pooled_output = outputs.last_hidden_state[:, 0, :]
         
         # 投影到统一维度
         features = self.projection(pooled_output)  # (B, output_dim=512)

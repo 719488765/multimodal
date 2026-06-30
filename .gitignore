@@ -1,0 +1,71 @@
+# === Large dataset directories ===
+project/data/train/
+project/data/test/
+project/data/val/
+project/data/CMU_MOSEI_MM/
+project/data/bad/
+
+# === Model checkpoints (all experiment tracks) ===
+**/checkpoints*/
+**/*.pth
+**/*.pt
+**/*.ckpt
+
+# === Training logs & TensorBoard ===
+**/logs*/
+**/*.log
+**/events.out.tfevents.*
+**/metrics.jsonl
+
+# === Large experiment output artifacts ===
+**/outputs_*/archived/
+**/outputs_*/figures/
+project/outputs_accuracy_seq/
+project/outputs_rerun/
+project/outputs_sdavt_v3/
+
+# === Binary media & array dumps ===
+*.npy
+*.pkl
+*.flv
+*.mp4
+*.wav
+
+# === Python / Node / caches ===
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+ENV/
+node_modules/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# === IDE & local editor ===
+.vscode/
+.idea/
+.devcontainer/
+
+# === Secrets ===
+.env
+.env.*
+!.env.example
+!.env*.example
+**/credentials*.json
+
+# === OS & temp ===
+.DS_Store
+Thumbs.db
+tmux-client-*.log
+
+# === emotion-agent local venv ===
+emotion-agent/asr-local/.venv/
+
+# === Wandb / MLflow ===
+wandb/
+mlruns/

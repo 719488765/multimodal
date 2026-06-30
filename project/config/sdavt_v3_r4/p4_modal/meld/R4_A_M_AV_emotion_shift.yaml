@@ -1,0 +1,140 @@
+model:
+  modalities:
+    use_video: true
+    use_audio: true
+    use_physiological: false
+    use_text: false
+  video:
+    backbone: resnet50
+    pretrained: true
+    feature_dim: 713
+    output_dim: 512
+    input_type: auto
+  audio:
+    backbone: facebook/wav2vec2-base
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+  physiological:
+    input_dim: 64
+    hidden_dim: 256
+    num_layers: 2
+    output_dim: 512
+    use_lstm: true
+  text:
+    backbone: bert-base-uncased
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+    unfreeze_encoder_layers: 0
+  attention:
+    num_heads: 8
+    hidden_dim: 512
+    num_layers: 3
+    dropout: 0.25
+    fusion_strategy: emotion_shift
+    leader_modal: text
+    num_gat_layers: 2
+    use_fmc_loss: false
+    use_context_window: false
+    modality_dropout: 0.0
+  output:
+    emotion_classes: 7
+    emotion_dimensions: 2
+    use_trend_prediction: false
+  domain_adaptation:
+    enabled: false
+  dataset_normalization:
+    enabled: false
+training:
+  batch_size: 1
+  gradient_accumulation_steps: 2
+  seed: 3407
+  num_epochs: 50
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  warmup_steps: 1000
+  gradient_clip: 1.0
+  optimizer: adamw
+  scheduler: cosine
+  freeze_backbone_epochs: 5
+  backbone_lr_multiplier: 0.05
+  save_every_n_epochs: 0
+  early_stopping:
+    enabled: true
+    monitor: val_f1
+    patience: 15
+    min_delta: 0.001
+  loss_weights:
+    classification: 1.0
+    regression: 0.0
+    trend: 0.0
+  sampling:
+    enabled: true
+    mode: proportional
+    shuffle: true
+  loss:
+    use_class_balanced: false
+    use_focal_loss: true
+    focal_gamma: 2.0
+    label_smoothing: 0.05
+  pretrain:
+    enabled: true
+    datasets:
+    - meld
+    epochs: 50
+  finetune:
+    enabled: true
+    datasets:
+    - meld
+    epochs: 50
+    freeze_backbone: false
+datasets:
+  crema:
+    emotion_classes: 6
+    use_native_labels: false
+    video_format: .flv
+  meld:
+    emotion_classes: 7
+    use_native_labels: true
+    video_format: .mp4
+    has_text: true
+  mosei:
+    emotion_classes: 7
+    use_native_labels: false
+    video_format: .npy
+data:
+  root_dir: data/
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  video:
+    fps: 30
+    frame_size: 112
+    num_frames: 4
+  audio:
+    sample_rate: 16000
+    duration: 3.0
+  context_window: 0
+paths:
+  checkpoint_dir: checkpoints_sdavt_v3_r4/
+  log_dir: logs_sdavt_v3_r4/
+  output_dir: outputs_sdavt_v3_r4/
+device: cuda
+num_workers: 4
+pin_memory: true
+experiment:
+  name: SDAVT_R4_R4_A_M_AV
+  project: sdavt_v3_r4
+  series: sdavt_v3_r4_p4_modal
+  use_tensorboard: true
+  data_revision: modal_complete_20260603
+  arch_revision: fusion_classifier_20260622_mosei_fix
+  paper_track: true
+  deprecated_log_roots:
+  - logs_sdavt_v3
+  - logs_sdavt_v3_archived
+  - logs_accuracy_seq
+  - logs_rerun
+  phase: p4_modal
+  job_id: R4_A_M_AV

@@ -1,0 +1,38 @@
+{
+  "timestamp": "20260625_200917",
+  "all_pass": true,
+  "results": [
+    {
+      "id": "F_M_ES",
+      "dataset": "meld",
+      "run_dir": "SDAVT_R4_F_M_ES",
+      "pass": true,
+      "issues": [],
+      "warnings": [
+        "post-best collapse: best=0.6109@ep3 last=0.4522 (drop=0.1586) (expected with early stopping)"
+      ],
+      "best_val_f1": 0.610869,
+      "best_val_f1_ep": 3,
+      "best_val_acc": 0.624549,
+      "last_val_f1": 0.452238,
+      "epochs": 16,
+      "queue_status": "done"
+    },
+    {
+      "id": "F_C_ES",
+      "dataset": "crema",
+      "run_dir": "SDAVT_R4_F_C_ES",
+      "pass": true,
+      "issues": [],
+      "warnings": [
+        "F1=0.5412 below pre-retrain peak 0.579 (curve may still be cleaner)"
+      ],
+      "best_val_f1": 0.541194,
+      "best_val_f1_ep": 34,
+      "best_val_acc": 0.547043,
+      "last_val_f1": 0.528858,
+      "epochs": 47,
+      "queue_status": "done"
+    }
+  ]
+}

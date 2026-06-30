@@ -1,0 +1,15 @@
+[Unit]
+Description=Emotion Agent ASR (Whisper API on 9010)
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/path/to/multimodal/emotion-agent/asr-local
+Environment=PATH=/path/to/conda/envs/myenv310/bin:/usr/bin
+ExecStart=/path/to/multimodal/emotion-agent/asr-local/start_server.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

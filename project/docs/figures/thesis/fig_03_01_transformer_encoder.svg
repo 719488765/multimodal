@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320" viewBox="0 0 640 320">
+  <defs><style type="text/css"><![CDATA[
+.t{fill:#111;font-family:Arial,Helvetica,sans-serif;font-size:12.5px}
+.h{fill:#111;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold}
+  ]]></style></defs>
+  <rect width="640" height="320" fill="#fff"/>
+  <text x="320" y="26" text-anchor="middle" class="h">Fig.3-1 Transformer encoder block</text>
+  <rect x="200" y="55" width="240" height="55" rx="5" fill="#fff8ee" stroke="#222"/>
+  <text x="320" y="88" text-anchor="middle" class="t">MHA + residual + LayerNorm</text>
+  <rect x="200" y="125" width="240" height="55" rx="5" fill="#eef6ff" stroke="#222"/>
+  <text x="320" y="158" text-anchor="middle" class="t">FFN + residual + LayerNorm</text>
+  <rect x="200" y="195" width="240" height="55" rx="5" fill="#f4f4f4" stroke="#222"/>
+  <text x="320" y="228" text-anchor="middle" class="t">Stack L layers</text>
+  <marker id="m" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#444"/></marker>
+  <path d="M320 110 L320 125" stroke="#444" marker-end="url(#m)"/>
+  <path d="M320 180 L320 195" stroke="#444" marker-end="url(#m)"/>
+  <text x="320" y="285" text-anchor="middle" class="t">Attention(Q,K,V)=softmax(QK^T/sqrt(d))V</text>
+</svg>

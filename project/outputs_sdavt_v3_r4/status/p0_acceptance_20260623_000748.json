@@ -1,0 +1,71 @@
+{
+  "timestamp": "2026-06-23T00:07:48",
+  "all_done": false,
+  "all_pass": false,
+  "p0_count": 6,
+  "done_count": 5,
+  "checks": [
+    {
+      "id": "F_C_TS",
+      "status": "done",
+      "run_dir": "SDAVT_R4_F_C_TS_20260622_140751",
+      "pass": true,
+      "issues": [],
+      "best_val_f1": 0.257899,
+      "best_val_acc": 0.283602,
+      "epochs": 28
+    },
+    {
+      "id": "F_M_STD",
+      "status": "done",
+      "run_dir": "SDAVT_R4_F_M_STD_20260622_140751",
+      "pass": true,
+      "issues": [],
+      "best_val_f1": 0.459452,
+      "best_val_acc": 0.499097,
+      "epochs": 13
+    },
+    {
+      "id": "F_M_TS",
+      "status": "done",
+      "run_dir": "SDAVT_R4_F_M_TS_20260622_163603",
+      "pass": true,
+      "issues": [],
+      "best_val_f1": 0.382593,
+      "best_val_acc": 0.436823,
+      "epochs": 18
+    },
+    {
+      "id": "F_O_LFT",
+      "status": "done",
+      "run_dir": "SDAVT_R4_F_O_LFT_20260622_214330",
+      "pass": true,
+      "issues": [],
+      "best_val_f1": 0.598017,
+      "best_val_acc": 0.716195,
+      "epochs": 9
+    },
+    {
+      "id": "F_O_STD",
+      "status": "done",
+      "run_dir": "SDAVT_R4_F_O_STD_20260622_222125",
+      "pass": true,
+      "issues": [],
+      "best_val_f1": 0.598786,
+      "best_val_acc": 0.716195,
+      "epochs": 9
+    },
+    {
+      "id": "F_O_TS",
+      "status": "running",
+      "run_dir": null,
+      "pass": false,
+      "issues": [
+        "status=running (not done)"
+      ],
+      "best_val_f1": null,
+      "best_val_acc": null,
+      "epochs": 0
+    }
+  ]
+}

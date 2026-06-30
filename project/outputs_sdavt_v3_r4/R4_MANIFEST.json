@@ -1,0 +1,25 @@
+{
+  "round": "sdavt_v3_r4",
+  "paper_data_roots": {
+    "checkpoint_dir": "checkpoints_sdavt_v3_r4/",
+    "log_dir": "logs_sdavt_v3_r4/",
+    "output_dir": "outputs_sdavt_v3_r4/"
+  },
+  "deprecated_for_paper": [
+    "logs_sdavt_v3",
+    "logs_sdavt_v3_archived",
+    "logs_accuracy_seq",
+    "logs_rerun"
+  ],
+  "phase_filter": "p3_c3",
+  "job_count": 41,
+  "execution_order": [
+    "p0_fix → 验证融合修复（6 jobs）",
+    "p1_baseline → 三单域 ES 主基线（3 jobs）",
+    "p2_fusion → 全融合消融（14 jobs）",
+    "p2.5 → F_M_ES / F_C_ES anti-overfit 重训验收",
+    "p3_m3 → MELD Tier2 矩阵（8 jobs，需 P2.5 通过）",
+    "p3_c3 → CREMA Tier2 补强（3 jobs，与 P3-M 后半并行）",
+    "p4_modal → MELD 模态消融（7 jobs，需 P3 冠军）"
+  ]
+}

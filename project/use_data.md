@@ -2113,3 +2113,145 @@ find downloads/MAFW -maxdepth 3 -type f | head -n 50
 ```
 
 将输出复制出来，让智能助手根据实际结构为你定制一个**可以直接复制执行**的整理脚本。
+
+---
+
+## 十一、混合数据集训练优化方案
+
+### 11.1 概述
+
+当使用多个开源数据集（CREMA-D、MELD、CMU-MOSEI）进行混合训练时，由于数据集之间存在异构性（域偏移、类别不平衡、标注不一致等），需要采用专门的优化策略。本项目已实现了以下优化方案：
+
+1. **数据集平衡采样**：确保每个batch包含来自不同数据集的样本
+2. **类别平衡损失**：处理类别不平衡问题
+3. **域适应机制**：学习域不变特征，提高跨域泛化能力
+4. **数据集特定归一化**：减少域间特征分布差异
+5. **混合训练策略**：优化训练流程（交替训练、渐进式训练、课程学习）
+
+### 11.2 配置混合数据集训练
+
+在 `config/config.yaml` 中配置混合数据集训练优化：
+
+```yaml
+training:
+  # 数据集平衡采样
+  sampling:
+    enabled: true  # 启用平衡采样
+    mode: "proportional"  # "proportional"（按比例）或 "uniform"（均匀）
+    shuffle: true
+    seed: null
+  
+  # 损失函数配置
+  loss:
+    # 类别平衡损失
+    use_class_balanced: true
+    class_balance_beta: 0.9999
+    
+    # Focal Loss（替代类别平衡损失）
+    use_focal_loss: false
+    focal_alpha: 1.0
+    focal_gamma: 2.0
+    
+    # 域适应损失
+    use_domain_adaptation: true
+    domain_loss_weight: 0.1
+
+model:
+  # 域适应配置
+  domain_adaptation:
+    enabled: true
+    num_domains: 3  # CREMA-D, MELD, CMU-MOSEI
+    hidden_dim: 256
+    lambda_param: 1.0
+    adaptive_lambda: true  # 自适应lambda
+  
+  # 数据集特定归一化
+  dataset_normalization:
+    enabled: true
+    num_datasets: 3
+    momentum: 0.1
+```
+
+### 11.3 运行混合数据集训练
+
+使用训练脚本进行混合数据集训练：
+
+```bash
+cd /home/lizhichun_24/sda1/code/multimodal/project
+python scripts/train.py --config config/config.yaml --mode pretrain
+```
+
+训练脚本会自动：
+1. 检测数据集（从文件名中提取dataset_id）
+2. 应用平衡采样（如果启用）
+3. 计算类别平衡损失和域适应损失
+4. 应用数据集特定归一化
+
+### 11.4 训练策略选择
+
+项目支持三种混合训练策略（在 `utils/training_strategies.py` 中实现）：
+
+1. **交替训练（Alternating Training）**：
+   - 每个epoch交替使用不同数据集
+   - 确保模型充分学习每个数据集的特征
+
+2. **渐进式训练（Progressive Training）**：
+   - 先单数据集训练，再混合训练
+   - 逐步增加数据集的多样性
+
+3. **课程学习（Curriculum Learning）**：
+   - 从简单数据集到复杂数据集
+   - 逐步增加训练难度
+
+### 11.5 监控训练过程
+
+训练过程中会输出以下信息：
+
+```
+Epoch 0/50
+Train Loss: 2.3456
+Train Loss Breakdown: {'classification': 1.2345, 'regression': 0.5678, 'domain': 0.1234}
+Validation Loss: 2.1234, Metrics: {'accuracy': 0.65, 'f1': 0.62}
+```
+
+- `classification`: 情感分类损失
+- `regression`: 情绪维度回归损失
+- `domain`: 域适应损失（如果启用）
+
+### 11.6 预期效果
+
+使用混合数据集训练优化方案后，预期能够：
+
+- **跨域准确率提升**：在跨数据集测试中，准确率提升5-10%
+- **类别平衡改善**：少数类别的F1分数提升10-15%
+- **泛化能力增强**：在新数据集上的表现提升8-12%
+
+### 11.7 详细文档
+
+更多关于混合数据集训练优化的详细信息，请参考：
+
+- `docs/MIXED_DATASET_TRAINING_ANALYSIS.md`：问题分析与优化方案详细说明
+- `data/balanced_sampler.py`：平衡采样器实现
+- `models/balanced_loss.py`：类别平衡损失实现
+- `models/domain_adaptation.py`：域适应模块实现
+- `utils/training_strategies.py`：混合训练策略实现
+
+### 11.8 故障排查
+
+如果遇到混合数据集训练问题：
+
+1. **数据集ID未正确识别**：
+   - 检查文件名格式是否为 `{dataset}_{split}_{idx}.{ext}`
+   - 确保数据集名称在 `dataset.py` 的 `DATASET_EMOTION_MAPS` 中定义
+
+2. **平衡采样不工作**：
+   - 检查 `config.yaml` 中 `sampling.enabled` 是否为 `true`
+   - 查看训练日志中的采样统计信息
+
+3. **域适应损失为0或NaN**：
+   - 检查 `dataset_ids` 是否正确传递到模型
+   - 确保 `domain_adaptation.enabled` 为 `true`
+
+4. **类别不平衡仍然严重**：
+   - 尝试调整 `class_balance_beta` 参数（增大beta值）
+   - 或使用 Focal Loss（设置 `use_focal_loss: true`）

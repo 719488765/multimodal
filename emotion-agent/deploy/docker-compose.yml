@@ -1,0 +1,32 @@
+services:
+  emotion-backend:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=${APP_ENV}
+      - MODEL_PROVIDER=${MODEL_PROVIDER}
+      - LLM_PROVIDER=${LLM_PROVIDER}
+      - ASR_PROVIDER=${ASR_PROVIDER}
+      - MODEL_CONFIG_PATH=${MODEL_CONFIG_PATH}
+      - MODEL_CHECKPOINT_PATH=${MODEL_CHECKPOINT_PATH}
+      - CORS_ALLOW_ORIGIN=${CORS_ALLOW_ORIGIN}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ../../project:/workspace/project:ro
+
+  emotion-frontend:
+    build:
+      context: ..
+      dockerfile: deploy/frontend.Dockerfile
+    env_file:
+      - .env
+    environment:
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      - emotion-backend

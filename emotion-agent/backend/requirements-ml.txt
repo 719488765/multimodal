@@ -1,0 +1,10 @@
+# ML stack for MODEL_PROVIDER=current (install alongside requirements.txt)
+torch>=2.0.0
+torchvision>=0.15.0
+transformers>=4.30.0
+opencv-python>=4.8.0
+librosa>=0.10.0
+soundfile>=0.12.0
+Pillow>=10.0.0
+PyYAML>=6.0
+scikit-learn>=1.3.0

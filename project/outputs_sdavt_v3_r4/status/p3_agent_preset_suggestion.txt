@@ -1,0 +1,15 @@
+# P3 MELD winner → Agent preset (Tier-2 PASS, updated 2026-06-30)
+job_id=M3_M7_combo
+train_config=config/sdavt_v3_r4/p3_m3/meld/M3_M7_combo.yaml
+checkpoint=checkpoints_sdavt_v3_r4/SDAVT_R4_M3_M7_combo/checkpoint_pretrain_best_f1.pth
+best_f1=0.6957@ep31
+best_acc=0.7121@ep31
+
+Suggested preset block for config_agent_deploy.yaml:
+  sdavt_meld_v3_r4:
+    train_config: config/sdavt_v3_r4/p3_m3/meld/M3_M7_combo.yaml
+    checkpoint: checkpoints_sdavt_v3_r4/SDAVT_R4_M3_M7_combo/checkpoint_pretrain_best_f1.pth
+
+Then: bash scripts/apply_deploy_preset.sh sdavt_meld_v3_r4
+
+Note: supersedes previous M3_M3_uniform preset (F1=0.611).

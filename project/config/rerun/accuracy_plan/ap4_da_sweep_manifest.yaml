@@ -1,0 +1,19 @@
+# Author: AI
+# Date: 2026-04-11
+# Description: 阶段4 域适应扫描 — 已复制到本目录并写入 logs_accuracy_seq / checkpoints_accuracy_seq（与本周 logs_rerun 隔离）
+
+da_sweep_configs:
+  - path: "config/rerun/accuracy_plan/ap4_config_AVT_DA_accuracy_seq.yaml"
+    note: "AVT + DA 默认"
+  - path: "config/rerun/accuracy_plan/ap4_config_AVT_DA_w002_accuracy_seq.yaml"
+    note: "domain_loss_weight 0.02"
+  - path: "config/rerun/accuracy_plan/ap4_config_AVT_DA_w005_accuracy_seq.yaml"
+    note: "domain_loss_weight 0.05"
+  - path: "config/rerun/accuracy_plan/ap4_config_AVT_DA_w010_accuracy_seq.yaml"
+    note: "domain_loss_weight 0.10"
+  - path: "config/rerun/accuracy_plan/ap4_config_AVT_DA_w005_lr5e5_accuracy_seq.yaml"
+    note: "w005 + lr 5e-5"
+  - path: "config/rerun/accuracy_plan/ap4_config_AVT_DA_uniform_accuracy_seq.yaml"
+    note: "DA + uniform 采样"
+  - path: "config/rerun/accuracy_plan/ap4_config_AVT_DA_seed3407_accuracy_seq.yaml"
+    note: "DA + seed 3407"

@@ -46,15 +46,28 @@ logs/
 *.log
 tensorboard/
 
-# Data
-data/
-*.csv
+# Data (media splits only; keep data/*.py loaders)
+data/train/
+data/test/
+data/val/
+data/CMU_MOSEI_MM/
+data/bad/
+data/**/*.csv
+!data/**/*.py
+
+# Outputs (artifact dirs; metadata under outputs_sdavt_v3_r4/ tracked via root .gitignore)
+outputs/
+outputs_accuracy_seq/
+outputs_rerun/
+outputs_sdavt_v3/
+outputs_sdavt_v3_r4/archived/
+outputs_sdavt_v3_r4/figures/
+results/
+checkpoints*/
+logs*/
+logs_*/
 *.npy
 *.pkl
-
-# Outputs
-outputs/
-results/
 
 # OS
 .DS_Store

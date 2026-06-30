@@ -58,11 +58,13 @@ class MultimodalEmotionModel(nn.Module):
         self.text_extractor = TextFeatureExtractor(
             backbone=model_config['text']['backbone'],
             pretrained=model_config['text']['pretrained'],
-            output_dim=model_config['text']['output_dim']
+            output_dim=model_config['text']['output_dim'],
+            unfreeze_encoder_layers=model_config['text'].get('unfreeze_encoder_layers', 0),
         )
         
         # 注意力融合模块（支持多种融合策略）
         attention_config = model_config['attention']
+        output_config = model_config['output']
         fusion_strategy = attention_config.get('fusion_strategy', 'standard')  # standard, emotion_shift, leader_follower, two_stage
         
         if fusion_strategy == 'emotion_shift':
@@ -116,7 +118,6 @@ class MultimodalEmotionModel(nn.Module):
             self.fmc_loss = None
         
         # 输出层
-        output_config = model_config['output']
         hidden_dim = attention_config['hidden_dim']
         
         # 情绪分类器（离散情绪类别）
@@ -147,7 +148,9 @@ class MultimodalEmotionModel(nn.Module):
             self.trend_predictor = None
         
     def forward(self, video=None, audio=None, physiological=None, text=None, 
-                text_input_ids=None, text_attention_mask=None, previous_emotions=None, return_fmc_loss=False):
+                text_input_ids=None, text_attention_mask=None, previous_emotions=None,
+                audio_precomputed=None, dataset_ids=None, context_text_input_ids=None,
+                context_text_attention_mask=None, return_fmc_loss=False, return_domain_logits=False, **kwargs):
         """
         前向传播
         
@@ -183,6 +186,8 @@ class MultimodalEmotionModel(nn.Module):
         
         if audio is not None:
             features['audio'] = self.audio_extractor(audio)
+        elif audio_precomputed is not None:
+            features['audio'] = self.audio_extractor(audio_precomputed)
         else:
             B = features['video'].shape[0]
             features['audio'] = torch.zeros(B, self.config['model']['audio']['output_dim']).to(

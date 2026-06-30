@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="200" viewBox="0 0 780 200">
+  <rect width="780" height="200" fill="#fff"/>
+  <text x="390" y="26" text-anchor="middle" fill="#111" font-family="Arial,sans-serif" font-size="15" font-weight="bold">Fig.6-2 Online window sequence</text>
+  <rect x="25" y="55" width="100" height="50" rx="4" fill="#eee" stroke="#222"/><text x="75" y="85" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" fill="#111">Window</text>
+  <rect x="135" y="55" width="100" height="50" rx="4" fill="#eee" stroke="#222"/><text x="185" y="85" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" fill="#111">ASR</text>
+  <rect x="245" y="55" width="100" height="50" rx="4" fill="#fff8ee" stroke="#222"/><text x="295" y="85" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" fill="#111">Build</text>
+  <rect x="355" y="55" width="100" height="50" rx="4" fill="#eef6ff" stroke="#222"/><text x="405" y="85" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" fill="#111">Infer</text>
+  <rect x="465" y="55" width="100" height="50" rx="4" fill="#eef6ff" stroke="#222"/><text x="515" y="85" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" fill="#111">LLM</text>
+  <rect x="575" y="55" width="100" height="50" rx="4" fill="#eee" stroke="#222"/><text x="625" y="85" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" fill="#111">UI</text>
+  <marker id="aa" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#444"/></marker>
+  <path d="M125 80 L135 80 M235 80 L245 80 M345 80 L355 80 M455 80 L465 80 M565 80 L575 80" stroke="#444" marker-end="url(#aa)"/>
+</svg>

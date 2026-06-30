@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="340" viewBox="0 0 760 340">
+  <rect width="760" height="340" fill="#fff"/>
+  <text x="380" y="28" text-anchor="middle" fill="#111" font-family="Arial,sans-serif" font-size="16" font-weight="bold">Fig.7-1 AP0-AP4 accuracy sequence</text>
+  <rect x="40" y="60" width="100" height="60" rx="5" fill="#eee" stroke="#222"/><text x="90" y="95" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" fill="#111">AP0</text>
+  <rect x="160" y="60" width="100" height="60" rx="5" fill="#eee" stroke="#222"/><text x="210" y="95" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" fill="#111">AP1</text>
+  <rect x="280" y="60" width="100" height="60" rx="5" fill="#fff8ee" stroke="#222"/><text x="330" y="95" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" fill="#111">AP2</text>
+  <rect x="400" y="60" width="100" height="60" rx="5" fill="#fff8ee" stroke="#222"/><text x="450" y="95" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" fill="#111">AP3</text>
+  <rect x="520" y="60" width="100" height="60" rx="5" fill="#eef6ff" stroke="#222"/><text x="570" y="95" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" fill="#111">AP4</text>
+  <rect x="640" y="60" width="80" height="60" rx="5" fill="#f4f4f4" stroke="#222"/><text x="680" y="95" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" fill="#111">paper</text>
+  <marker id="am" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#444"/></marker>
+  <path d="M140 90 L160 90 M260 90 L280 90 M380 90 L400 90 M500 90 L520 90 M620 90 L640 90" stroke="#444" marker-end="url(#am)"/>
+  <text x="380" y="200" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" fill="#333">logs_accuracy_seq isolated from logs_rerun</text>
+</svg>

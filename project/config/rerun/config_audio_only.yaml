@@ -1,0 +1,225 @@
+# 模型配置
+model:
+  # 特征提取器配置
+  # 模态使用开关（用于模态消融实验）
+  modalities:
+    # 音频单模态基线：仅使用音频（A），关闭文本/视频/生理
+    use_video: false
+    use_audio: true
+    use_physiological: false
+    use_text: false
+
+  video:
+    backbone: "resnet50"
+    pretrained: true
+    feature_dim: 713        # 用于直接输入的视觉特征维度（如 MOSEI OpenFace2），CNN路径仍使用2048
+    output_dim: 512
+    
+  audio:
+    backbone: "facebook/wav2vec2-base"
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+    
+  physiological:
+    input_dim: 64  # EEG/ECG/GSR特征维度
+    hidden_dim: 256
+    num_layers: 2
+    output_dim: 512
+    use_lstm: true
+    
+  text:
+    backbone: "bert-base-uncased"
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+    
+  # 注意力融合配置
+  attention:
+    num_heads: 8
+    hidden_dim: 512
+    num_layers: 3
+    dropout: 0.1
+    # 融合策略选择: standard, emotion_shift, leader_follower, two_stage
+    # 为先保证训练流程稳定，这里使用标准多头注意力作为 Baseline；
+    # 后续对比实验再切换为 "emotion_shift" 等更复杂策略。
+    fusion_strategy: "standard"
+    leader_modal: "text"  # 领导-跟随注意力中的领导模态
+    num_gat_layers: 2  # 两阶段融合中GAT层数
+    # 功能最大相关损失（用于预训练）
+    use_fmc_loss: false  # 预训练阶段建议开启
+    fmc_projections: 64
+    fmc_weight: 0.1
+    
+  # 输出层配置
+  output:
+    emotion_classes: 7  # 情绪类别数：快乐、悲伤、愤怒、恐惧、中性、焦虑、其他
+    emotion_dimensions: 2  # 效价和唤醒度
+    use_trend_prediction: true
+  
+  # 域适应配置（用于混合数据集训练）
+  # 说明：为先顺利跑通预训练流程，这里暂时关闭域适应；
+  # 后续做“有/无域适应”的对比实验时再重新打开。
+  domain_adaptation:
+    enabled: false  # 是否启用域适应（当前先关闭）
+    num_domains: 3  # 域数量（CREMA-D, MELD, CMU-MOSEI）
+    hidden_dim: 256  # 域分类器隐藏层维度
+    lambda_param: 1.0  # 梯度反转强度参数
+    adaptive_lambda: true  # 是否使用自适应lambda（随训练进度调整）
+  
+  # 数据集特定归一化配置
+  dataset_normalization:
+    # 说明：在当前环境下，DatasetSpecificNormalization 在混合三数据集时
+    # 容易因统计量出现 NaN/Inf 导致梯度异常。为先跑通稳定基线，这里暂时关闭，
+    # 后续在更干净/大显存环境中再单独开启做消融实验。
+    enabled: false  # 是否启用数据集特定归一化
+    num_datasets: 3  # 数据集数量
+    momentum: 0.1  # 移动平均的动量参数
+
+# 训练配置
+training:
+  # 为降低显存占用，batch_size 调整为 4
+  batch_size: 4
+  num_epochs: 50
+  learning_rate: 1e-4
+  weight_decay: 1e-5
+  warmup_steps: 1000
+  gradient_clip: 1.0
+  
+  # 优化器
+  optimizer: "adamw"
+  scheduler: "cosine"
+  
+  # 损失函数权重
+  loss_weights:
+    classification: 1.0
+    # 回归与趋势预测在当前调试阶段容易引入数值不稳定，
+    # 先将其权重设为 0，仅优化分类性能；后续如需要可再单独开启。
+    regression: 0.0
+    trend: 0.0
+  
+  # 混合数据集训练优化配置
+  # 数据集平衡采样
+  sampling:
+    enabled: true  # 是否启用平衡采样
+    mode: "proportional"  # "proportional"（按比例）或 "uniform"（均匀）
+    shuffle: true
+    seed: null  # 随机种子，None表示不固定
+  
+  # 损失函数配置（用于处理类别不平衡和域偏移）
+  loss:
+    # 类别平衡损失
+    use_class_balanced: true  # 是否使用类别平衡损失
+    class_balance_beta: 0.9999  # 类别平衡的beta参数（0 < beta < 1）
+    
+    # Focal Loss（替代类别平衡损失）
+    use_focal_loss: false  # 是否使用Focal Loss
+    focal_alpha: 1.0  # Focal Loss的alpha参数
+    focal_gamma: 2.0  # Focal Loss的gamma参数
+    
+    # 域适应损失（当前为简化调试先关闭，后续实验可再开启）
+    use_domain_adaptation: false  # 是否使用域适应
+    domain_loss_weight: 0.1  # 域适应损失的权重
+    
+  # 预训练+微调
+  pretrain:
+    enabled: true
+    # 支持开源数据集：CREMA-D, MELD, CMU-MOSEI
+    # 使用小写名称与datasets配置对应
+    datasets: ["crema", "meld", "mosei"]
+    epochs: 20
+    
+  finetune:
+    enabled: true
+    # 当前阶段暂不使用专门的驾驶员数据集，微调同样基于三套开源数据
+    datasets: ["crema", "meld", "mosei"]
+    epochs: 30
+    freeze_backbone: false   # 如后续引入驾驶员数据集，可考虑冻结部分backbone
+
+# 数据集配置
+# 定义不同数据集的情感类别映射和特定配置
+datasets:
+  crema:
+    # CREMA-D数据集配置
+    emotion_classes: 6  # Happy, Sad, Angry, Fear, Disgust, Neutral
+    emotion_map:
+      happy: 0
+      sad: 1
+      angry: 2
+      fear: 3
+      disgust: 4
+      neutral: 5
+    video_format: ".flv"  # CREMA-D使用FLV格式
+    has_physiological: false  # CREMA-D不包含生理信号
+  
+  meld:
+    # MELD数据集配置
+    emotion_classes: 7  # Anger, Disgust, Sadness, Joy, Neutral, Surprise, Fear
+    emotion_map:
+      joy: 0      # 映射到happy
+      sadness: 1 # 映射到sad
+      anger: 2    # 映射到angry
+      fear: 3     # 映射到fear
+      neutral: 4  # 映射到neutral
+      surprise: 5 # 映射到anxious（临时）
+      disgust: 6  # 映射到other（临时）
+    video_format: ".mp4"  # MELD使用MP4格式
+    has_physiological: false  # MELD不包含生理信号
+    has_text: true  # MELD包含文本标注
+  
+  mosei:
+    # CMU-MOSEI数据集配置
+    emotion_classes: 7  # 使用标准7类映射
+    emotion_map:
+      happy: 0
+      sad: 1
+      angry: 2
+      fear: 3
+      neutral: 4
+      surprise: 5
+      disgust: 6
+    # 原始 MOSEI 使用 .mp4 视频，这里使用从 .csd 提取的特征（.npy），配置主要用于文档说明
+    video_format: ".npy"
+    has_physiological: false
+    has_text: true
+
+# 数据配置
+data:
+  root_dir: "data/"
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  
+  # 数据预处理
+  video:
+    fps: 30
+    # 为降低显存占用，将输入分辨率与采样帧数适当降低
+    frame_size: 160   # 原为 224
+    num_frames: 8     # 原为 16
+    
+  audio:
+    sample_rate: 16000
+    duration: 3.0  # 秒
+    
+  physiological:
+    sampling_rate: 128
+    window_size: 5.0  # 秒
+
+# 路径配置
+paths:
+  checkpoint_dir: "checkpoints_rerun/"
+  log_dir: "logs_rerun/"
+  output_dir: "outputs_rerun/"
+
+# 设备配置
+device: "cuda"  # "cuda" or "cpu"
+num_workers: 4
+pin_memory: true
+
+# 实验管理
+experiment:
+  name: "RERUN_A_pretrain_3datasets_noDA"
+  project: "driver_emotion_analysis"
+  use_wandb: false
+  use_tensorboard: true
+

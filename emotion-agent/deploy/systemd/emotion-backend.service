@@ -1,0 +1,18 @@
+[Unit]
+Description=Emotion Agent Backend (FastAPI + static dist on 8000)
+After=network.target emotion-asr.service
+Wants=emotion-asr.service
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/path/to/multimodal/emotion-agent
+Environment=PATH=/path/to/conda/envs/myenv310/bin:/usr/bin
+EnvironmentFile=/path/to/multimodal/emotion-agent/backend/.env
+ExecStartPre=/bin/bash -c 'cd /path/to/multimodal/emotion-agent/frontend && npm ci && npm run build'
+ExecStart=/path/to/multimodal/emotion-agent/backend/start_server.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

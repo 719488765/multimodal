@@ -1,0 +1,2 @@
+run,phase,dataset,epochs,best_acc,best_acc_ep,best_f1,best_f1_ep,last_acc,last_f1,min_cls_ce_uw
+SDAVT_R4_C3_C3_focal_20260626_043125,other,?,35,0.549731,29,0.550823,29,0.544355,0.539386,1.338232

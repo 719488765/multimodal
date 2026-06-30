@@ -9,9 +9,15 @@ import os
 import shutil
 import csv
 import random
+import sys
 
 # 配置路径
-PROJECT_ROOT = "/home/lizhichun_24/sda1/code/multimodal/project"
+# 为了兼容不同环境，项目根目录使用相对当前脚本的位置自动推断
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from data.meld_audio_utils import extract_audio_from_video, meld_wav_path_for_video
 MELD_ROOT = os.path.join(PROJECT_ROOT, "downloads", "MELD")
 DATA_ROOT = os.path.join(PROJECT_ROOT, "data")
 
@@ -54,11 +60,26 @@ def find_meld_files(meld_root):
     # 查找视频文件
     video_base_dir = os.path.join(meld_root, "videos")
     if os.path.exists(video_base_dir):
-        for split in ['train', 'dev', 'test']:
-            video_dir = os.path.join(video_base_dir, split)
-            if os.path.exists(video_dir):
-                for filename in os.listdir(video_dir):
-                    if filename.endswith('.mp4'):
+        # 支持两种目录结构：
+        # 1）标准结构：videos/train, videos/dev, videos/test
+        # 2）MELD原始结构：videos/train_splits, videos/dev_splits_complete, videos/output_repeated_splits_test
+        split_dir_mapping = {
+            'train': ['train', 'train_splits'],
+            'dev': ['dev', 'dev_splits_complete'],
+            'test': ['test', 'output_repeated_splits_test'],
+        }
+
+        for split, candidate_dirs in split_dir_mapping.items():
+            for subdir in candidate_dirs:
+                video_dir = os.path.join(video_base_dir, subdir)
+                if not os.path.exists(video_dir):
+                    continue
+
+                # 递归遍历所有子目录，查找 .mp4 文件
+                for root, _, files in os.walk(video_dir):
+                    for filename in files:
+                        if not filename.endswith('.mp4'):
+                            continue
                         # 解析文件名：dia{dialogue_id}_utt{utterance_id}.mp4
                         if filename.startswith('dia') and '_utt' in filename:
                             try:
@@ -66,8 +87,8 @@ def find_meld_files(meld_root):
                                 dialogue_id = parts[0].replace('dia', '')
                                 utterance_id = parts[1].replace('utt', '')
                                 key = (split, dialogue_id, utterance_id)
-                                video_files[key] = os.path.join(video_dir, filename)
-                            except:
+                                video_files[key] = os.path.join(root, filename)
+                            except Exception:
                                 print(f"警告：无法解析文件名: {filename}")
     
     # 查找CSV标注文件
@@ -188,6 +209,12 @@ def organize_meld_data(meld_root, data_root):
             dst_video = os.path.join(data_root, project_split, 'video', f"{sample_id}.mp4")
             if not os.path.exists(dst_video):
                 shutil.copy2(video_path, dst_video)
+
+            # 从 mp4 提取 mono 16kHz WAV（与 config data.audio.sample_rate 一致）
+            dst_audio = meld_wav_path_for_video(dst_video)
+            ok, msg = extract_audio_from_video(dst_video, dst_audio)
+            if not ok and msg != "skipped existing":
+                print(f"  警告：音频提取失败 {sample_id}: {msg}")
             
             # 生成文本文件
             dst_text = os.path.join(data_root, project_split, 'text', f"{sample_id}.txt")
@@ -203,7 +230,6 @@ def organize_meld_data(meld_root, data_root):
                 f.write(f"{emotion}\n")
                 f.write(f"{valence},{arousal}\n")
             
-            # 音频文件：MELD视频包含音频，可以从视频提取，这里先跳过
             # 生理信号：MELD不包含，保持为空
             
             valid_count += 1
@@ -231,10 +257,15 @@ def organize_meld_data(meld_root, data_root):
         label_dir = os.path.join(data_root, split, 'labels')
         
         video_count = len([f for f in os.listdir(video_dir) if os.path.isfile(os.path.join(video_dir, f))]) if os.path.exists(video_dir) else 0
+        audio_dir = os.path.join(data_root, split, 'audio')
+        meld_audio_count = len([
+            f for f in os.listdir(audio_dir)
+            if f.startswith('meld_') and f.endswith('.wav') and os.path.isfile(os.path.join(audio_dir, f))
+        ]) if os.path.exists(audio_dir) else 0
         text_count = len([f for f in os.listdir(text_dir) if os.path.isfile(os.path.join(text_dir, f))]) if os.path.exists(text_dir) else 0
         label_count = len([f for f in os.listdir(label_dir) if os.path.isfile(os.path.join(label_dir, f))]) if os.path.exists(label_dir) else 0
         
-        print(f"{split}: 视频={video_count}, 文本={text_count}, 标签={label_count}")
+        print(f"{split}: 视频={video_count}, meld_wav={meld_audio_count}, 文本={text_count}, 标签={label_count}")
 
 def main():
     """主函数"""

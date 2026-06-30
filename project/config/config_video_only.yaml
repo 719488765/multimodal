@@ -1,0 +1,204 @@
+# 模型配置（V-only：仅使用视频模态，无域适应）
+model:
+  # 特征提取器配置
+  # 模态使用开关（用于模态消融实验）
+  modalities:
+    # 视频单模态基线：仅使用视频（V），关闭音频/文本/生理
+    use_video: true
+    use_audio: false
+    use_physiological: false
+    use_text: false
+
+  video:
+    backbone: "resnet50"
+    pretrained: true
+    feature_dim: 713        # 用于直接输入的视觉特征维度（如 MOSEI OpenFace2），CNN路径仍使用2048
+    output_dim: 512
+    
+  audio:
+    backbone: "facebook/wav2vec2-base"
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+    
+  physiological:
+    input_dim: 64  # EEG/ECG/GSR特征维度
+    hidden_dim: 256
+    num_layers: 2
+    output_dim: 512
+    use_lstm: true
+    
+  text:
+    backbone: "bert-base-uncased"
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+    
+  # 注意力融合配置
+  attention:
+    num_heads: 8
+    hidden_dim: 512
+    num_layers: 3
+    dropout: 0.1
+    # 融合策略选择: standard, emotion_shift, leader_follower, two_stage
+    # 为先保证训练流程稳定，这里使用标准多头注意力作为 Baseline；
+    # 后续对比实验再切换为 "emotion_shift" 等更复杂策略。
+    fusion_strategy: "standard"
+    leader_modal: "text"  # 领导-跟随注意力中的领导模态（仅文本存在时生效，这里可以保持默认值）
+    num_gat_layers: 2  # 两阶段融合中GAT层数
+    # 功能最大相关损失（用于预训练）
+    use_fmc_loss: false  # 当前预训练阶段先关闭，后续如需可开启
+    fmc_projections: 64
+    fmc_weight: 0.1
+    
+  # 输出层配置
+  output:
+    emotion_classes: 7  # 情绪类别数：快乐、悲伤、愤怒、恐惧、中性、焦虑、其他
+    emotion_dimensions: 2  # 效价和唤醒度
+    use_trend_prediction: true
+  
+  # 域适应配置（用于混合数据集训练）
+  # 说明：V-only 基线阶段关闭域适应，与 AT/T/A noDA 保持可比。
+  domain_adaptation:
+    enabled: false  # 是否启用域适应（当前先关闭）
+    num_domains: 3  # 域数量（CREMA-D, MELD, CMU-MOSEI）
+    hidden_dim: 256  # 域分类器隐藏层维度
+    lambda_param: 1.0  # 梯度反转强度参数
+    adaptive_lambda: true  # 是否使用自适应lambda（随训练进度调整）
+  
+  # 数据集特定归一化配置
+  dataset_normalization:
+    enabled: false
+    num_datasets: 3
+    momentum: 0.1
+
+# 训练配置
+training:
+  # 为降低显存占用，V-only 先使用更小 batch 和更少 epoch 做烟雾测试
+  batch_size: 2
+  num_epochs: 50
+  learning_rate: 1e-4
+  weight_decay: 1e-5
+  warmup_steps: 1000
+  gradient_clip: 1.0
+  
+  # 优化器
+  optimizer: "adamw"
+  scheduler: "cosine"
+  
+  # 损失函数权重
+  loss_weights:
+    classification: 1.0
+    regression: 0.0
+    trend: 0.0
+  
+  # 混合数据集训练优化配置
+  sampling:
+    enabled: true
+    mode: "proportional"
+    shuffle: true
+    seed: null
+  
+  # 损失函数配置（用于处理类别不平衡和域偏移）
+  loss:
+    use_class_balanced: true
+    class_balance_beta: 0.9999
+    use_focal_loss: false
+    focal_alpha: 1.0
+    focal_gamma: 2.0
+    use_domain_adaptation: false
+    domain_loss_weight: 0.1
+    
+  # 预训练+微调开关（与其它配置保持一致）
+  pretrain:
+    enabled: true
+    datasets: ["crema", "meld", "mosei"]
+    epochs: 20
+    
+  finetune:
+    enabled: true
+    datasets: ["crema", "meld", "mosei"]
+    epochs: 30
+    freeze_backbone: false
+
+# 数据集配置（直接复用音频单模态配置，保证标签/映射一致）
+datasets:
+  crema:
+    emotion_classes: 6
+    emotion_map:
+      happy: 0
+      sad: 1
+      angry: 2
+      fear: 3
+      disgust: 4
+      neutral: 5
+    video_format: ".flv"
+    has_physiological: false
+  
+  meld:
+    emotion_classes: 7
+    emotion_map:
+      joy: 0
+      sadness: 1
+      anger: 2
+      fear: 3
+      neutral: 4
+      surprise: 5
+      disgust: 6
+    video_format: ".mp4"
+    has_physiological: false
+    has_text: true
+  
+  mosei:
+    emotion_classes: 7
+    emotion_map:
+      happy: 0
+      sad: 1
+      angry: 2
+      fear: 3
+      neutral: 4
+      surprise: 5
+      disgust: 6
+    video_format: ".npy"
+    has_physiological: false
+    has_text: true
+
+# 数据配置
+data:
+  root_dir: "data/"
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  
+  # 数据预处理（V-only 先进一步减小分辨率与帧数以降低显存）
+  video:
+    fps: 30
+    frame_size: 112
+    num_frames: 4
+    
+  audio:
+    sample_rate: 16000
+    duration: 3.0
+    
+  physiological:
+    sampling_rate: 128
+    window_size: 5.0
+
+# 路径配置
+paths:
+  checkpoint_dir: "checkpoints/"
+  log_dir: "logs/"
+  output_dir: "outputs/"
+
+# 设备配置
+device: "cuda"
+num_workers: 4
+pin_memory: true
+
+# 实验管理
+experiment:
+  name: "V_only_pretrain_3datasets_noDA"
+  project: "driver_emotion_analysis"
+  use_wandb: false
+  use_tensorboard: true
+

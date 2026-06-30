@@ -1,0 +1,135 @@
+model:
+  modalities:
+    use_video: true
+    use_audio: true
+    use_physiological: false
+    use_text: true
+  video:
+    backbone: resnet50
+    pretrained: true
+    feature_dim: 713
+    output_dim: 512
+    input_type: npy
+    max_seq_len: 32
+    temporal_hidden_dim: 256
+  audio:
+    backbone: facebook/wav2vec2-base
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+    precomputed_feature_dim: 74
+    audio_mode: precomputed
+    max_seq_len: 32
+    temporal_hidden_dim: 256
+  physiological:
+    input_dim: 64
+    hidden_dim: 256
+    num_layers: 2
+    output_dim: 512
+    use_lstm: true
+  text:
+    backbone: bert-base-uncased
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+    unfreeze_encoder_layers: 0
+  attention:
+    num_heads: 8
+    hidden_dim: 512
+    num_layers: 3
+    dropout: 0.15
+    fusion_strategy: standard
+    leader_modal: text
+    num_gat_layers: 2
+    use_fmc_loss: false
+  output:
+    emotion_classes: 7
+    emotion_dimensions: 2
+    use_trend_prediction: false
+  domain_adaptation:
+    enabled: false
+  dataset_normalization:
+    enabled: false
+training:
+  batch_size: 2
+  gradient_accumulation_steps: 2
+  seed: 3407
+  num_epochs: 50
+  learning_rate: 5.0e-05
+  weight_decay: 1.0e-05
+  warmup_steps: 800
+  gradient_clip: 0.5
+  optimizer: adamw
+  scheduler: cosine
+  freeze_backbone_epochs: 0
+  backbone_freeze_mode: selective
+  trainable_backbone_modules:
+  - video_extractor.temporal_encoder
+  - audio_extractor.temporal_encoder
+  backbone_lr_multiplier: 0.1
+  save_every_n_epochs: 0
+  early_stopping:
+    enabled: true
+    monitor: val_f1
+    patience: 8
+    min_delta: 0.002
+  loss_weights:
+    classification: 1.0
+    regression: 0.0
+    trend: 0.0
+  sampling:
+    enabled: true
+    mode: proportional
+    shuffle: true
+  loss:
+    use_class_balanced: false
+    use_focal_loss: false
+    label_smoothing: 0.05
+  pretrain:
+    enabled: true
+    datasets:
+    - mosei
+    epochs: 50
+  finetune:
+    enabled: true
+    datasets:
+    - mosei
+    epochs: 50
+    freeze_backbone: false
+datasets:
+  crema:
+    emotion_classes: 6
+    use_native_labels: false
+    video_format: .flv
+  meld:
+    emotion_classes: 7
+    use_native_labels: false
+    video_format: .mp4
+  mosei:
+    emotion_classes: 7
+    use_native_labels: false
+    video_format: .npy
+data:
+  root_dir: data/
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  video:
+    fps: 30
+    frame_size: 112
+    num_frames: 4
+  audio:
+    sample_rate: 16000
+    duration: 3.0
+paths:
+  checkpoint_dir: checkpoints_sdavt_v3/
+  log_dir: logs_sdavt_v3/
+  output_dir: outputs_sdavt_v3/
+device: cuda
+num_workers: 4
+pin_memory: true
+experiment:
+  name: SDAVT_F_O_STD_mosei_fix_v3
+  project: sdavt_v3
+  series: sdavt_v3_fusion_fix_v3
+  use_tensorboard: true

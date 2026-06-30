@@ -1,0 +1,23 @@
+{
+  "id": "M3_M7_combo",
+  "phase": "p3_m3",
+  "dataset": "meld",
+  "fusion": "emotion_shift",
+  "config": "config/sdavt_v3_r4/p3_m3/meld/M3_M7_combo.yaml",
+  "priority": 37,
+  "gpu_hint": 1,
+  "paper_section": "Table3-MELD Tier2 优化矩阵",
+  "depends_on": "p2_es_retrain_passed",
+  "target_f1": 0.59,
+  "target_acc": 0.62,
+  "status": "done",
+  "started_at": null,
+  "finished_at": null,
+  "run_dir": "SDAVT_R4_M3_M7_combo",
+  "best_val_f1": 0.69575,
+  "best_val_acc": 0.712094,
+  "note": "gpu1",
+  "updated_at": "2026-06-30T10:42:58",
+  "best_val_f1_ep": 31,
+  "epochs_done": 33
+}

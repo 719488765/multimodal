@@ -1,0 +1,183 @@
+================================================================================
+  工作周报
+  姓名：李智春
+  周期：2026年5月30日 — 2026年6月5日
+  项目：多模态情绪识别 + 情感智能体（emotion-agent）工程整合与论文框架
+  承接：WEEKLY_REPORT_20260516_0523.txt（截至 2026-05-23 之后的进展）
+  关联文档：emotion-agent/docs/ARCHITECTURE.md
+            emotion-agent/docs/IMPLEMENTATION_BATCHES.md
+            emotion-agent/deploy/SERVER_DEPLOY.md
+================================================================================
+
+【本周结论】
+  完成 emotion-agent 与 project 真实训练权重（AP2 M1）的端到端打通：ASR（Whisper）、
+  checkpoint 推理、Ollama 话术均已非 mock 运行；inference_source=checkpoint 可作为验收依据。
+  在线视频由单帧 JPEG 复制 4 帧升级为浏览器 webm 短视频 clip，与训练集抽帧逻辑对齐；
+  针对端口转发导致的大文件上传失败，实现分块/批量分块/整包 multipart 与公网 nginx 部署方案。
+  发现中文在线场景下情绪分类严重偏 neutral（ASR「我很难过」→ 模型平静），根因定位为
+  bert-base-uncased + 英文训练域 + 单帧回退四因素叠加；已启动 bert-base-chinese 微调但遇
+  checkpoint 键名不匹配需修复。
+  完成论文初稿框架八章正文级骨架，与 AP0–AP4 实验体系、智能体章节对齐。
+
+  当前总体状态：演示闭环已打通；中文在线准确率不足属模型域偏移问题，改进主路径为
+  chinese BERT 微调 + webm 4 帧；工程上已具备公网 HTTPS 单端口部署能力。
+
+--------------------------------------------------------------------------------
+一、本周工作进展
+--------------------------------------------------------------------------------
+
+1. 智能体与真实训练模型合并（核心）
+
+   （1）推理链路
+       - 后端 MODEL_PROVIDER=current，经 CurrentProjectAdapter 加载
+         checkpoints_accuracy_seq/AP2_M1_ES_3ds…/checkpoint_pretrain_best_f1.pth。
+       - 推理服务 emotion_inference_service：支持 video/webm、image/jpeg 按 mime 分流；
+         pipeline_trace 输出 decode_mode、frames_extracted、tokenizer 等可审计字段。
+       - 健康检查与 preset 绑定：ap2_m1 / ap4_w005 / agent_chinese。
+
+   （2）多模态采集与上传
+       - 前端 MediaRecorder 同步录制 webm clip；结束采集后 ASR + 情绪 + LLM 串行调用。
+       - 上传策略演进：16KB 分块 → 每请求 5 块批量（upload-chunks-batch）→ server 模式
+         优先 POST /emotion/infer-upload 整包 multipart（≤5MB）。
+       - 开发模式：webm 分块 >8 次或 >128KB 自动回退 JPEG（避免 Failed to fetch）；
+         服务器/HTTPS 模式（VITE_DEPLOY_MODE=server）保留 webm，利于 4 帧推理。
+
+   （3）ASR 与 LLM 对齐
+       - ASR：whisper_api @9010，中文 zh，与情绪模型文本输入合并（user + ASR）。
+       - LLM：ollama qwen2.5:7b-instruct；prompt 注入情绪模型 Top1 与 all_probs 七类概率，
+         避免仅依据 ASR 文本产生说难过但判平静的话术矛盾；前端展示回复依据。
+
+   （4）文档与启动
+       - emotion-agent/docs/ARCHITECTURE.md（模块/数据流）、START_DEMO.txt、
+         IMPLEMENTATION_BATCHES.md（Batch 1–6）、RUNBOOK。
+       - 一键脚本 start_all_demo.sh / stop_all_demo.sh；生产构建 build_production.sh。
+
+2. 工程优化（Batch 1–6）
+
+   | 批次    | 内容                                          | 状态                    |
+   |---------|-----------------------------------------------|-------------------------|
+   | Batch 1 | 共享抽帧 video_frame_utils + 后端 webm 解码   | ✅                      |
+   | Batch 2 | 前端 MediaRecorder + webm 上传                | ✅                      |
+   | Batch 3 | LLM all_probs 注入与 UI                       | ✅                      |
+   | Batch 4 | chinese 微调 config/脚本/preset               | 脚本✅ 训练❌（见问题） |
+   | Batch 5 | 架构与启动文档                                | ✅                      |
+   | Batch 6 | nginx/systemd/SERVER_DEPLOY、server 上传模式  | ✅                      |
+
+   - 公网部署：deploy/nginx.conf（client_max_body_size 20m、WebSocket、600s 超时）、
+     systemd 单元模板、deploy/SERVER_DEPLOY.md、.env.production.example。
+   - 微调增强：TextFeatureExtractor 支持 unfreeze_encoder_layers=2；
+     ap2_M1_chinese_text_agent.yaml 配置 bert-base-chinese + backbone_lr_multiplier。
+   - 辅助脚本：apply_agent_chinese_preset.sh（微调后切换 .env preset）。
+
+3. 测试与问题排查
+
+   （1）连通性
+       - 现象：浏览器转发 127.0.0.1:8000，video 分块 8/37 报 Failed to fetch。
+       - 结论：非模型 bug，为隧道对大量小 POST 不稳定；推荐单端口 8000 或公网 nginx 直连。
+       - 处理：批量分块 API、降低码率、dev 模式 JPEG 阈值；server 模式整包 multipart；
+         规划公网 nginx 消除 Cursor 隧道。
+
+   （2）准确性
+       - 现象：ASR「我很难过/我很伤心」置信 ~0.9，情绪 Top1 neutral（~0.50），sad ~0.13；
+         trace 显示 bert-base-uncased、single_frame_fallback（1/4 帧）。
+       - 结论：英文 BERT + 英文三数据集权重 + 中文域偏移 + 视频信息不足，四因素叠加；
+         需 bert-base-chinese 微调并恢复 webm 多帧后再评估。
+       - 处理：启动 bert-base-chinese 微调；LLM 改读模型概率而非仅依赖 ASR 文本。
+
+   （3）本地自测
+       - curl /api/v1/health、infer-upload（文本）可返回 inference_source=checkpoint。
+       - 整包 multipart 与分块接口在 localhost 可用；公网 HTTPS 验收待部署。
+
+4. 论文初稿框架编写
+
+   框架概要：
+
+   第一章 绪论
+     智能座舱/HMI 背景；音视文三模态动机；主要工作（模型、AP 实验、智能体）；
+     八章结构；研究边界（公开数据、离散情绪类）。
+
+   第二章 国内外研究现状
+     多模态早/中/晚期融合；情感转变（CFN-ESA）与 emotion_shift；领导—跟随融合；
+     ResNet/C3D 时空脉络；Wav2Vec2、BERT/LLM；域适应与类别不平衡；车载 HMI；
+     本文定位与不足收束。
+
+   第三章 相关知识概述
+     CNN/ResNet、时空建模、RNN 局限、Transformer、BERT/词向量、Wav2Vec2、
+     融合概念、损失与域适应、评价指标（含 cls_ce_unweighted 监控口径）。
+
+   第四章 数据集与总体方案
+     CREMA-D / MELD / CMU-MOSEI 来源、清洗、标签映射表；MultimodalEmotionModel
+     总体结构；混合实验协议与 YAML 配置体系。
+
+   第五章 融合与训练优化
+     standard / emotion_shift / leader_follower / two_stage；域适应与 AP0–AP4
+     实验序列逻辑（单域上界→配方→融合→域损失扫描）。
+
+   第六章 智能体系统
+     emotion-agent 需求、FastAPI 分层、ASR/推理/LLM 编排、配置—检查点绑定、
+     安全与接口表。
+
+   第七章 实验与讨论
+     主线重跑六组、AP0–AP4 表格骨架、消融口径、系统测试与误差分析占位。
+
+   第八章 总结与展望
+     贡献归纳、创新点、局限与未来工作。
+
+--------------------------------------------------------------------------------
+二、智能体端到端数据流
+--------------------------------------------------------------------------------
+
+  浏览器采集（摄像头+麦克风）
+    → webm 视频 clip + wav 音频（或 dev 模式 JPEG 回退）
+    → POST /api/v1/emotion/infer-upload 或分块上传 + infer-from-upload
+    → 后端 ASR（9010）→ 文本合并 → MultimodalEmotionModel（CUDA, ap2_m1）
+    → 七类概率 + valence/arousal
+    → POST /api/v1/agent/respond（Ollama，注入 all_probs）
+    → 前端展示情绪条、pipeline_trace 四阶段、助手回复
+
+--------------------------------------------------------------------------------
+三、本周遇到的问题与处理
+--------------------------------------------------------------------------------
+
+1. Failed to fetch（video 分块 8/37）
+   - 处理：批量分块 API、JPEG 回退阈值、server 整包 multipart；规划公网 nginx。
+
+2. 情绪识别与 ASR 不一致（难过 → neutral）
+   - 处理：定位为模型域与文本编码器语言不匹配；启动 chinese 微调；LLM 改读模型概率。
+
+3. ImportError calculate_metrics（helpers 编辑中间态）
+   - 处理：已恢复 load_checkpoint_partial 与 calculate_metrics 导出。
+
+4. bert-base-chinese 微调启动失败（5/28）
+   - 现象：load_state_dict 报 word_embeddings 30522 vs 21128 维不匹配。
+   - 原因：--skip_text_encoder 过滤键前缀为 text_feature_extractor，实际模块名为
+     text_extractor，英文 BERT 权重仍被加载。
+   - 待办：修正 train.py 键名过滤后重跑 finetune_agent_chinese.sh。
+
+--------------------------------------------------------------------------------
+四、阶段性结论
+--------------------------------------------------------------------------------
+
+1. emotion-agent 已实现真实权重推理 + 真实 ASR + 真实 LLM 演示闭环，非 mock；
+   inference_source=checkpoint 可作为验收依据。
+
+2. 在线中文场景准确率不足，主要不是前端 bug，而是训练分布（英文三数据集）+
+   推理分布（中文 ASR + 摄像头）不一致；改进主路径为 chinese BERT 微调 + webm 4 帧。
+
+3. 工程上已具备公网 HTTPS 单端口部署方案，可从根本上缓解大文件上传与 JPEG 回退。
+
+4. 论文初稿框架已搭好八章骨架，可与 AP0–AP4 实验结果、智能体章节并行填充。
+
+--------------------------------------------------------------------------------
+五、下一步工作计划
+--------------------------------------------------------------------------------
+
+  1. 修复 train.py 中 skip_text_encoder 键前缀（text_extractor），重跑
+     finetune_agent_chinese.sh；完成后 apply_agent_chinese_preset.sh + 重启 8000。
+  2. 公网服务器按 SERVER_DEPLOY.md 部署 nginx+HTTPS；验收 webm、decode_mode=video_file。
+  3. 固定测试句「我很难过」对比 ap2_m1 vs agent_chinese 的 sad/neutral 概率。
+  4. Agent 中文小评测集（50–100 条）与 eval_agent_zh.py。
+  5. Docker 单镜像合并 dist+backend（当前 compose 仍为 8000+5173 开发态）。
+  6. AP2 配方 + agent_chinese 组合实验。
+
+================================================================================

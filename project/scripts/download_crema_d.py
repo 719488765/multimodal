@@ -77,24 +77,13 @@ def download_with_env_var(target_path):
     """
     import os
     
-    # 设置kagglehub缓存目录（需要在导入kagglehub之前设置）
-    # 注意：由于kagglehub已经在文件开头导入，这里设置环境变量可能不会生效
-    # 所以我们需要在下载后移动文件
+    # 设置kagglehub缓存目录
     os.environ['KAGGLEHUB_HOME'] = target_path
     
     print(f"设置KAGGLEHUB_HOME={target_path}")
-    print("注意：环境变量可能需要在导入kagglehub之前设置")
-    print("如果下载到默认位置，将自动移动到目标路径...")
     
     # 下载数据集
     path = kagglehub.dataset_download("orvile/crema-d-emotional-multimodal-dataset")
-    
-    print(f"下载路径: {path}")
-    
-    # 如果下载到了默认位置，移动到目标路径
-    if not path.startswith(target_path):
-        print(f"数据集下载到了默认位置，正在移动到目标路径...")
-        return download_and_move(target_path)
     
     print(f"✓ 下载完成！")
     print(f"数据集路径: {path}")
@@ -155,12 +144,6 @@ if __name__ == "__main__":
     # 尝试方法1：使用path参数
     try:
         path = download_crema_d(target_path)
-        # 检查是否下载到了目标路径
-        if not path.startswith(target_path):
-            print(f"\n数据集下载到了: {path}")
-            print(f"目标路径是: {target_path}")
-            print("正在移动到目标路径...")
-            path = download_and_move(target_path)
     except Exception as e:
         print(f"方法1失败: {e}")
         # 尝试方法3：下载后移动
@@ -171,4 +154,3 @@ if __name__ == "__main__":
     print("下载完成！")
     print(f"数据集位置: {path}")
     print("=" * 60)
-

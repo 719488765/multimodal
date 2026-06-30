@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="380" viewBox="0 0 760 380">
+  <defs><style type="text/css"><![CDATA[
+.t{fill:#111;font-family:Arial,Helvetica,sans-serif;font-size:13px}
+.h{fill:#111;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold}
+  ]]></style></defs>
+  <rect width="760" height="380" fill="#fff"/>
+  <text x="380" y="30" text-anchor="middle" class="h">Fig.4-1 Data pipeline</text>
+  <rect x="30" y="55" width="110" height="50" rx="4" fill="#eee" stroke="#222"/><text x="85" y="85" text-anchor="middle" class="t">Acquire</text>
+  <rect x="160" y="55" width="110" height="50" rx="4" fill="#eee" stroke="#222"/><text x="215" y="85" text-anchor="middle" class="t">Normalize</text>
+  <rect x="290" y="55" width="110" height="50" rx="4" fill="#eee" stroke="#222"/><text x="345" y="85" text-anchor="middle" class="t">Health</text>
+  <rect x="420" y="55" width="110" height="50" rx="4" fill="#eee" stroke="#222"/><text x="475" y="85" text-anchor="middle" class="t">Quarantine</text>
+  <rect x="550" y="55" width="160" height="50" rx="4" fill="#eef" stroke="#222"/><text x="630" y="85" text-anchor="middle" class="t">Unified tree</text>
+  <marker id="mk" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#222"/></marker>
+  <path d="M140 80 L160 80 M270 80 L290 80 M400 80 L420 80 M530 80 L550 80" stroke="#222" marker-end="url(#mk)"/>
+  <rect x="80" y="140" width="180" height="70" rx="4" fill="#fff8ee" stroke="#222"/>
+  <text x="170" y="175" text-anchor="middle" class="t">Video branch</text>
+  <rect x="290" y="140" width="180" height="70" rx="4" fill="#fff8ee" stroke="#222"/>
+  <text x="380" y="175" text-anchor="middle" class="t">Audio 16kHz</text>
+  <rect x="500" y="140" width="180" height="70" rx="4" fill="#fff8ee" stroke="#222"/>
+  <text x="590" y="175" text-anchor="middle" class="t">Text BERT</text>
+  <rect x="200" y="250" width="360" height="70" rx="6" fill="#eef" stroke="#222"/>
+  <text x="380" y="290" text-anchor="middle" class="t">Label map -&gt; DataLoader -&gt; train.py</text>
+</svg>

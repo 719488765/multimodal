@@ -1,0 +1,4 @@
+run,phase,dataset,epochs,best_acc,best_acc_ep,best_f1,best_f1_ep,last_acc,last_f1,min_cls_ce_uw
+SDAVT_R4_R4_B_C0_20260623_005627,p1_baseline,crema,32,0.587366,19,0.588871,19,0.524194,0.528997,1.312584
+SDAVT_R4_R4_B_M1_20260623_005627,p1_baseline,meld,14,0.59657,2,0.568046,3,0.40704,0.393176,0.942812
+SDAVT_R4_R4_B_O0_20260623_032138,p1_baseline,mosei,21,0.726884,9,0.679162,12,0.711384,0.674582,0.717305

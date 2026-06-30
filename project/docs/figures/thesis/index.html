@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>论文配图说明 · thesis figures index</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; line-height: 1.6; color: #222; }
+  h1 { font-size: 1.3rem; border-bottom: 2px solid #333; padding-bottom: 8px; }
+  h2 { font-size: 1.05rem; margin-top: 24px; }
+  .hero { background: #e8f0fa; border: 1px solid #4a7ab8; padding: 14px 16px; margin: 16px 0; border-radius: 4px; }
+  .hero a { font-weight: bold; color: #1a5080; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 12px 0; }
+  th, td { border: 1px solid #ccc; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f5f5f5; }
+  .merged { background: #e8f5e9; }
+  img, object { max-width: 100%; border: 1px solid #ddd; margin: 8px 0; }
+  .fig-preview { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px) { .fig-preview { grid-template-columns: 1fr; } }
+  code { background: #f4f4f4; padding: 1px 4px; font-size: 0.88em; }
+</style>
+</head>
+<body>
+
+<h1>论文配图说明 · thesis/ 与总架构图的关系</h1>
+
+<div class="hero">
+  <strong>推荐：一张总图看全部工作</strong><br>
+  已将下方 9 张分图的内容整合为 LearnedSQLGen 论文风格的<strong>一张总架构图</strong>：<br>
+  <a href="../system_architecture_figure.html">→ 打开 Figure 1 总架构图 (横向 LearnedSQLGen 风格)</a><br>
+  <a href="../FIGURE1_EXPLANATION.md">→ 图元素详细解释 (FIGURE1_EXPLANATION.md)</a>
+</div>
+
+<h2>两个 URL 分别是什么？</h2>
+<table>
+  <tr>
+    <th>地址</th>
+    <th>内容</th>
+    <th>用途</th>
+  </tr>
+  <tr class="merged">
+    <td><code>/system_architecture_figure.html</code></td>
+    <td><strong>一张整合总图</strong>（Figure 1），含 (a) 离线训练、(b) 在线推理、(c) 推理示例</td>
+    <td>论文/答辩主图，覆盖全部工作</td>
+  </tr>
+  <tr>
+    <td><code>/thesis/</code>（本页）</td>
+    <td><strong>9 张分图 SVG</strong>，按论文章节拆分（数据、模型、融合、智能体、实验等）</td>
+    <td>插入 Word/LaTeX 各章节时的<strong>局部插图</strong></td>
+  </tr>
+</table>
+
+<p><strong>关系</strong>：总图 = 分图的「汇总版」。分图适合放在对应章节做细节说明；答辩或绪论/总结用总图即可。</p>
+
+<h2>分图一览（thesis/*.svg）</h2>
+<table>
+  <tr><th>编号</th><th>文件</th><th>章节</th><th>内容</th><th>在总图中的位置</th></tr>
+  <tr>
+    <td>图 1-1</td><td>fig_01_01_research_framework.svg</td><td>第一章</td>
+    <td>研究总体框架：数据→模型→实验→智能体</td><td>(a) 整体 + (b) 智能体出口</td>
+  </tr>
+  <tr>
+    <td>图 3-1</td><td>fig_03_01_transformer_encoder.svg</td><td>第三章</td>
+    <td>Transformer 编码器结构（BERT 基础）</td><td>未并入总图（背景知识，非系统主流程）</td>
+  </tr>
+  <tr>
+    <td>图 4-1</td><td>fig_04_01_data_pipeline.svg</td><td>第四章</td>
+    <td>Acquire→Normalize→Health→统一目录→三分支</td><td>(a) 左侧 User Input 下方 pipeline-mini</td>
+  </tr>
+  <tr>
+    <td>图 4-2</td><td>fig_04_02_model_architecture.svg</td><td>第四章</td>
+    <td>ResNet50 / Wav2Vec2 / BERT → Fusion → Head</td><td>(a) 中间 Agent 框</td>
+  </tr>
+  <tr>
+    <td>图 5-1</td><td>fig_05_01_fusion_comparison.svg</td><td>第五章</td>
+    <td>四种 fusion_strategy 对比</td><td>(a) Fusion Module 四格</td>
+  </tr>
+  <tr>
+    <td>图 5-2</td><td>fig_05_02_domain_adaptation.svg</td><td>第五章</td>
+    <td>域适应 DANN 分支</td><td>(a) DA branch 条</td>
+  </tr>
+  <tr>
+    <td>图 6-1</td><td>fig_06_01_agent_architecture.svg</td><td>第六章</td>
+    <td>Browser / FastAPI / ASR / LLM 分层</td><td>(b) 在线推理主流程</td>
+  </tr>
+  <tr>
+    <td>图 6-2</td><td>fig_06_02_online_sequence.svg</td><td>第六章</td>
+    <td>Window→ASR→Build→Infer→LLM→UI</td><td>(b) deploy-strip + 时序循环</td>
+  </tr>
+  <tr>
+    <td>图 7-1</td><td>fig_07_01_experiment_protocol_ap.svg</td><td>第七章</td>
+    <td>AP0→AP1→AP2→AP3→AP4→paper</td><td>(a) 右侧 Automata 状态机</td>
+  </tr>
+</table>
+
+<h2>分图预览</h2>
+<div class="fig-preview">
+  <div><strong>fig_01_01</strong><br><object data="fig_01_01_research_framework.svg" type="image/svg+xml" width="100%"></object></div>
+  <div><strong>fig_04_01</strong><br><object data="fig_04_01_data_pipeline.svg" type="image/svg+xml" width="100%"></object></div>
+  <div><strong>fig_04_02</strong><br><object data="fig_04_02_model_architecture.svg" type="image/svg+xml" width="100%"></object></div>
+  <div><strong>fig_05_01</strong><br><object data="fig_05_01_fusion_comparison.svg" type="image/svg+xml" width="100%"></object></div>
+  <div><strong>fig_06_01</strong><br><object data="fig_06_01_agent_architecture.svg" type="image/svg+xml" width="100%"></object></div>
+  <div><strong>fig_07_01</strong><br><object data="fig_07_01_experiment_protocol_ap.svg" type="image/svg+xml" width="100%"></object></div>
+</div>
+
+<h2>如何访问（本地浏览器）</h2>
+<ol>
+  <li>远程运行 <code>./scripts/serve_architecture_figure.sh</code></li>
+  <li>Cursor Ports 转发 <strong>8765</strong></li>
+  <li>总图：<a href="../system_architecture_figure.html">http://127.0.0.1:8765/system_architecture_figure.html</a></li>
+  <li>本说明页：<a href="index.html">http://127.0.0.1:8765/thesis/index.html</a></li>
+</ol>
+
+</body>
+</html>

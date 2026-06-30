@@ -1,0 +1,199 @@
+# Author: AI-Assistant
+# Date: 2026-03-11
+# Description: AT 模态 + 域适应（DA）三数据集混合预训练配置
+
+# 说明：
+# - 在原始 AT Baseline（config.yaml）基础上，仅开启域适应相关开关；
+# - 模态、优化器、学习率等保持一致，用于与 AT_pretrain_3datasets_noDA 直接对比。
+
+# 模型配置
+model:
+  # 模态使用开关：AT 组合（音频 + 文本），不使用视频与生理信号
+  modalities:
+    use_video: false
+    use_audio: true
+    use_physiological: false
+    use_text: true
+
+  video:
+    backbone: "resnet50"
+    pretrained: true
+    feature_dim: 713
+    output_dim: 512
+
+  audio:
+    backbone: "facebook/wav2vec2-base"
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+
+  physiological:
+    input_dim: 64
+    hidden_dim: 256
+    num_layers: 2
+    output_dim: 512
+    use_lstm: true
+
+  text:
+    backbone: "bert-base-uncased"
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+
+  attention:
+    num_heads: 8
+    hidden_dim: 512
+    num_layers: 3
+    dropout: 0.1
+    fusion_strategy: "standard"
+    leader_modal: "text"
+    num_gat_layers: 2
+    use_fmc_loss: false
+    fmc_projections: 64
+    fmc_weight: 0.1
+
+  output:
+    emotion_classes: 7
+    emotion_dimensions: 2
+    use_trend_prediction: true
+
+  # 域适应模块（本配置中开启）
+  domain_adaptation:
+    enabled: true            # 与 AT_noDA 的唯一区别之一：开启 DA 模块
+    num_domains: 3
+    hidden_dim: 256
+    lambda_param: 1.0
+    adaptive_lambda: true
+
+  dataset_normalization:
+    enabled: false
+    num_datasets: 3
+    momentum: 0.1
+
+# 训练配置
+training:
+  batch_size: 1
+  gradient_accumulation_steps: 4
+  num_epochs: 50
+  learning_rate: 1e-4
+  weight_decay: 1e-5
+  warmup_steps: 1000
+  gradient_clip: 1.0
+
+  optimizer: "adamw"
+  scheduler: "cosine"
+
+  loss_weights:
+    classification: 1.0
+    regression: 0.0
+    trend: 0.0
+
+  sampling:
+    enabled: true
+    mode: "proportional"
+    shuffle: true
+    seed: null
+
+  loss:
+    use_class_balanced: true
+    class_balance_beta: 0.9999
+
+    use_focal_loss: false
+    focal_alpha: 1.0
+    focal_gamma: 2.0
+
+    # 域适应损失（本配置中开启）
+    use_domain_adaptation: true        # 与 AT_noDA 的唯一区别之二：开启 DA 损失
+    domain_loss_weight: 0.1
+
+  pretrain:
+    enabled: true
+    datasets: ["crema", "meld", "mosei"]
+    epochs: 20
+
+  finetune:
+    enabled: true
+    datasets: ["crema", "meld", "mosei"]
+    epochs: 30
+    freeze_backbone: false
+
+# 数据集配置（保持与原 config.yaml 一致）
+datasets:
+  crema:
+    emotion_classes: 6
+    emotion_map:
+      happy: 0
+      sad: 1
+      angry: 2
+      fear: 3
+      disgust: 4
+      neutral: 5
+    video_format: ".flv"
+    has_physiological: false
+
+  meld:
+    emotion_classes: 7
+    emotion_map:
+      joy: 0
+      sadness: 1
+      anger: 2
+      fear: 3
+      neutral: 4
+      surprise: 5
+      disgust: 6
+    video_format: ".mp4"
+    has_physiological: false
+    has_text: true
+
+  mosei:
+    emotion_classes: 7
+    emotion_map:
+      happy: 0
+      sad: 1
+      angry: 2
+      fear: 3
+      neutral: 4
+      surprise: 5
+      disgust: 6
+    video_format: ".npy"
+    has_physiological: false
+    has_text: true
+
+# 数据配置
+data:
+  root_dir: "data/"
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+
+  video:
+    fps: 30
+    frame_size: 160
+    num_frames: 8
+
+  audio:
+    sample_rate: 16000
+    duration: 1.5
+
+  physiological:
+    sampling_rate: 128
+    window_size: 5.0
+
+# 路径配置
+paths:
+  checkpoint_dir: "checkpoints_rerun/"
+  log_dir: "logs_rerun/"
+  output_dir: "outputs_rerun/"
+
+# 设备配置
+device: "cuda"
+num_workers: 0
+pin_memory: true
+
+# 实验管理
+experiment:
+  name: "RERUN_AT_pretrain_3datasets_DA"
+  project: "driver_emotion_analysis"
+  use_wandb: false
+  use_tensorboard: true
+

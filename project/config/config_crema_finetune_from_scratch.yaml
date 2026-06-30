@@ -1,0 +1,183 @@
+# Author: AI-Assistant
+# Date: 2026-03-11
+# Description: CREMA-D 单数据集从零训练配置（AT 模态）
+
+model:
+  modalities:
+    use_video: false
+    use_audio: true
+    use_physiological: false
+    use_text: true
+
+  video:
+    backbone: "resnet50"
+    pretrained: true
+    feature_dim: 713
+    output_dim: 512
+
+  audio:
+    backbone: "facebook/wav2vec2-base"
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+
+  physiological:
+    input_dim: 64
+    hidden_dim: 256
+    num_layers: 2
+    output_dim: 512
+    use_lstm: true
+
+  text:
+    backbone: "bert-base-uncased"
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+
+  attention:
+    num_heads: 8
+    hidden_dim: 512
+    num_layers: 3
+    dropout: 0.1
+    fusion_strategy: "standard"
+    leader_modal: "text"
+    num_gat_layers: 2
+    use_fmc_loss: false
+    fmc_projections: 64
+    fmc_weight: 0.1
+
+  output:
+    emotion_classes: 6       # 仅针对 CREMA-D，6 类情绪
+    emotion_dimensions: 2
+    use_trend_prediction: true
+
+  domain_adaptation:
+    enabled: false
+    num_domains: 3
+    hidden_dim: 256
+    lambda_param: 1.0
+    adaptive_lambda: true
+
+  dataset_normalization:
+    enabled: false
+    num_datasets: 3
+    momentum: 0.1
+
+training:
+  batch_size: 4
+  num_epochs: 30
+  learning_rate: 1e-4
+  finetune_learning_rate: 5e-5
+  weight_decay: 1e-5
+  warmup_steps: 500
+  gradient_clip: 1.0
+
+  optimizer: "adamw"
+  scheduler: "cosine"
+
+  loss_weights:
+    classification: 1.0
+    regression: 0.0
+    trend: 0.0
+
+  sampling:
+    enabled: true
+    mode: "proportional"
+    shuffle: true
+    seed: null
+
+  loss:
+    use_class_balanced: true
+    class_balance_beta: 0.9999
+    use_focal_loss: false
+    focal_alpha: 1.0
+    focal_gamma: 2.0
+    use_domain_adaptation: false
+    domain_loss_weight: 0.1
+
+  pretrain:
+    enabled: false           # 本实验不依赖混合预训练，仅在 CREMA 上训练
+    datasets: ["crema"]
+    epochs: 0
+
+  finetune:
+    enabled: true
+    datasets: ["crema"]
+    epochs: 30
+    freeze_backbone: false
+
+datasets:
+  crema:
+    emotion_classes: 6
+    emotion_map:
+      happy: 0
+      sad: 1
+      angry: 2
+      fear: 3
+      disgust: 4
+      neutral: 5
+    video_format: ".flv"
+    has_physiological: false
+
+  meld:
+    emotion_classes: 7
+    emotion_map:
+      joy: 0
+      sadness: 1
+      anger: 2
+      fear: 3
+      neutral: 4
+      surprise: 5
+      disgust: 6
+    video_format: ".mp4"
+    has_physiological: false
+    has_text: true
+
+  mosei:
+    emotion_classes: 7
+    emotion_map:
+      happy: 0
+      sad: 1
+      angry: 2
+      fear: 3
+      neutral: 4
+      surprise: 5
+      disgust: 6
+    video_format: ".npy"
+    has_physiological: false
+    has_text: true
+
+data:
+  root_dir: "data/"
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+
+  video:
+    fps: 30
+    frame_size: 160
+    num_frames: 8
+
+  audio:
+    sample_rate: 16000
+    duration: 3.0
+
+  physiological:
+    sampling_rate: 128
+    window_size: 5.0
+
+paths:
+  checkpoint_dir: "checkpoints/"
+  log_dir: "logs/"
+  output_dir: "outputs/"
+
+device: "cuda"
+num_workers: 4
+pin_memory: true
+
+experiment:
+  name: ""        # 自动命名，例如 AT_finetune_1datasets_noDA_scratch_...
+  project: "driver_emotion_analysis"
+  use_wandb: false
+  use_tensorboard: true
+

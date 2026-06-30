@@ -62,8 +62,16 @@ class EmotionShiftAwareness(nn.Module):
             emotion_logits: (B, T, num_classes) - 每个时间步的情感预测
             shift_weights: (B, T) - 情感转变权重
         """
+        if features.dim() == 2:
+            features = features.unsqueeze(1)
+        elif features.dim() != 3:
+            while features.dim() > 3:
+                features = features.mean(dim=1)
+            if features.dim() == 2:
+                features = features.unsqueeze(1)
+
         B, T, _ = features.shape
-        
+
         # 预测每个时间步的情感状态
         emotion_logits = self.emotion_encoder(features)  # (B, T, num_classes)
         emotion_probs = F.softmax(emotion_logits, dim=-1)
@@ -137,17 +145,24 @@ class EmotionShiftFusion(nn.Module):
             emotion_logits: (B, num_classes) 或 (B, T, num_classes)
             shift_weights: (B,) 或 (B, T)
         """
-        # 统一维度处理
-        is_temporal = len(text_feat.shape) == 3
-        
-        if not is_temporal:
-            # 扩展到时序维度
-            video_feat = video_feat.unsqueeze(1)  # (B, 1, hidden_dim)
-            audio_feat = audio_feat.unsqueeze(1)
-            physiological_feat = physiological_feat.unsqueeze(1)
-            text_feat = text_feat.unsqueeze(1)
-        
-        # 加权融合多模态特征（文本权重更高）
+        def _pool_time(feat):
+            if feat is None:
+                return None
+            if feat.dim() == 3:
+                return feat.mean(dim=1)
+            return feat
+
+        video_feat = _pool_time(video_feat)
+        audio_feat = _pool_time(audio_feat)
+        physiological_feat = _pool_time(physiological_feat)
+        text_feat = _pool_time(text_feat)
+
+        # 统一维度处理（clip 级分类：(B, hidden_dim) -> (B, 1, hidden_dim)）
+        is_temporal = False
+        video_feat = video_feat.unsqueeze(1)
+        audio_feat = audio_feat.unsqueeze(1)
+        physiological_feat = physiological_feat.unsqueeze(1)
+        text_feat = text_feat.unsqueeze(1)
         weighted_feat = (
             self.modal_weights[0] * video_feat +
             self.modal_weights[1] * audio_feat +

@@ -7,7 +7,11 @@ from .helpers import (
     setup_device,
     save_checkpoint,
     load_checkpoint,
-    calculate_metrics
+    load_checkpoint_partial,
+    calculate_metrics,
+    init_experiment_logging,
+    append_metrics_json,
+    append_metrics_csv,
 )
 
 __all__ = [
@@ -15,6 +19,10 @@ __all__ = [
     'setup_device',
     'save_checkpoint',
     'load_checkpoint',
-    'calculate_metrics'
+    'load_checkpoint_partial',
+    'calculate_metrics',
+    'init_experiment_logging',
+    'append_metrics_json',
+    'append_metrics_csv',
 ]
 

@@ -1,0 +1,38 @@
+{
+  "timestamp": "20260624_212612",
+  "all_pass": false,
+  "results": [
+    {
+      "id": "F_M_ES",
+      "dataset": "meld",
+      "run_dir": "SDAVT_R4_F_M_ES",
+      "pass": false,
+      "issues": [
+        "queue status=running (not done)"
+      ],
+      "warnings": [],
+      "best_val_f1": null,
+      "best_val_f1_ep": null,
+      "best_val_acc": null,
+      "last_val_f1": null,
+      "epochs": 0,
+      "queue_status": "running"
+    },
+    {
+      "id": "F_C_ES",
+      "dataset": "crema",
+      "run_dir": "SDAVT_R4_F_C_ES",
+      "pass": false,
+      "issues": [
+        "no val metrics"
+      ],
+      "warnings": [],
+      "best_val_f1": null,
+      "best_val_f1_ep": null,
+      "best_val_acc": null,
+      "last_val_f1": null,
+      "epochs": 0,
+      "queue_status": "done"
+    }
+  ]
+}

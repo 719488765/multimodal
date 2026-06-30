@@ -1,0 +1,41 @@
+{
+  "crema": {
+    "run": "SDAVT_R4_F_C_ES",
+    "phase": "p2_fusion",
+    "epochs": 47,
+    "best_acc": 0.547043,
+    "best_acc_ep": 41,
+    "best_f1": 0.541194,
+    "best_f1_ep": 34,
+    "last_acc": 0.541667,
+    "last_f1": 0.528858,
+    "min_cls_ce_uw": 1.286404,
+    "dataset": "crema"
+  },
+  "meld": {
+    "run": "SDAVT_R4_F_M_ES",
+    "phase": "p2_fusion",
+    "epochs": 16,
+    "best_acc": 0.624549,
+    "best_acc_ep": 3,
+    "best_f1": 0.610869,
+    "best_f1_ep": 3,
+    "last_acc": 0.434116,
+    "last_f1": 0.452238,
+    "min_cls_ce_uw": 0.925188,
+    "dataset": "meld"
+  },
+  "mosei": {
+    "run": "SDAVT_R4_F_O_ES_20260624_101647",
+    "phase": "p2_fusion",
+    "epochs": 21,
+    "best_acc": 0.726884,
+    "best_acc_ep": 9,
+    "best_f1": 0.679162,
+    "best_f1_ep": 12,
+    "last_acc": 0.711384,
+    "last_f1": 0.674582,
+    "min_cls_ce_uw": 0.717305,
+    "dataset": "mosei"
+  }
+}
