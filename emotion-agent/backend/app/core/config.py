@@ -45,11 +45,97 @@ CHECKPOINT_PRESETS: Dict[str, Dict[str, str]] = {
         ),
     },
     "sdavt_meld_v3_r4": {
-        "train_config": "config/sdavt_v3_r4/p3_m3/meld/M3_M3_uniform.yaml",
+        "train_config": "config/sdavt_v3_r4/p3_m3/meld/M3_M7_combo.yaml",
         "checkpoint": (
-            "checkpoints_sdavt_v3_r4/SDAVT_R4_M3_M3_uniform_20260626_031222/"
+            "checkpoints_sdavt_v3_r4/SDAVT_R4_M3_M7_combo/"
             "checkpoint_pretrain_best_f1.pth"
         ),
+    },
+    "sdavt_meld_zh_agent": {
+        "train_config": "config/sdavt_v3_r4/p3_m3/meld/M3_M7_chinese_agent.yaml",
+        "checkpoint": (
+            "checkpoints_sdavt_v3_r4/SDAVT_R4_M3_M7_chinese_agent/"
+            "checkpoint_finetune_best_f1.pth"
+        ),
+    },
+    "sdavt_mosei_r4": {
+        "train_config": "config/sdavt_v3_r4/p2_fusion/mosei/F_O_ES_emotion_shift.yaml",
+        "checkpoint": (
+            "checkpoints_sdavt_v3_r4/SDAVT_R4_F_O_ES_20260624_101647/"
+            "checkpoint_pretrain_best_f1.pth"
+        ),
+    },
+    "sdavt_crema_r4": {
+        "train_config": "config/sdavt_v3_r4/p3_c3/crema/C3_C2_w2v_large.yaml",
+        "checkpoint": (
+            "checkpoints_sdavt_v3_r4/SDAVT_R4_C3_C2_w2v_large_20260626_004150/"
+            "checkpoint_pretrain_best_f1.pth"
+        ),
+    },
+}
+
+
+# 前端 /model/status 展示用摘要（实验对照 preset 标注 experimental）
+PRESET_METADATA: Dict[str, Dict[str, Any]] = {
+    "sdavt_meld_v3_r4": {
+        "label": "sdavt_meld_v3_r4（R4 冠军 M3_M7 F1=0.696，推荐）",
+        "dataset": "meld",
+        "best_f1": 0.696,
+        "best_acc": 0.712,
+        "recommended": True,
+        "experimental": False,
+    },
+    "sdavt_meld_zh_agent": {
+        "label": "sdavt_meld_zh_agent（M3_M7 + 中文 BERT，中文场景推荐）",
+        "dataset": "meld",
+        "recommended": True,
+        "experimental": False,
+    },
+    "meld_only": {
+        "label": "meld_only（MELD 单域 AP1，对照）",
+        "dataset": "meld",
+        "best_f1": 0.54,
+        "recommended": False,
+        "experimental": False,
+    },
+    "ap2_m1": {
+        "label": "ap2_m1（三混合 F1≈0.56）",
+        "dataset": "mixed",
+        "best_f1": 0.56,
+        "recommended": False,
+        "experimental": False,
+    },
+    "agent_chinese": {
+        "label": "agent_chinese（中文 BERT 微调）",
+        "dataset": "mixed",
+        "recommended": False,
+        "experimental": False,
+    },
+    "mosei_only": {
+        "label": "mosei_only（MOSEI 单域 AP1，实验）",
+        "dataset": "mosei",
+        "recommended": False,
+        "experimental": True,
+    },
+    "ap4_w005": {
+        "label": "ap4_w005（DA 预训练）",
+        "dataset": "mixed",
+        "recommended": False,
+        "experimental": False,
+    },
+    "sdavt_mosei_r4": {
+        "label": "sdavt_mosei_r4（R4 MOSEI F_O_ES F1=0.679，仅实验）",
+        "dataset": "mosei",
+        "best_f1": 0.679,
+        "recommended": False,
+        "experimental": True,
+    },
+    "sdavt_crema_r4": {
+        "label": "sdavt_crema_r4（R4 CREMA C3_C2 Acc=0.567，仅实验）",
+        "dataset": "crema",
+        "best_acc": 0.567,
+        "recommended": False,
+        "experimental": True,
     },
 }
 

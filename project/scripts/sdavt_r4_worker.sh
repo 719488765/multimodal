@@ -7,15 +7,38 @@ QUEUE_FILE="${2:-outputs_sdavt_v3_r4/experiment_queue.json}"
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$PROJECT_DIR"
 
+# shellcheck disable=SC1091
+source "$PROJECT_DIR/scripts/r4_env.sh"
+
 export CUDA_VISIBLE_DEVICES="$GPU_ID"
+PY="${R4_PYTHON:-python3}"
+
+_validate_p4_job() {
+  local job_id="$1"
+  local dataset="$2"
+  if [[ "$job_id" != R4_A_* ]]; then
+    return 0
+  fi
+  if "$PY" scripts/validate_p4_job_metrics.py "$job_id" --dataset "$dataset"; then
+    echo "[R4 worker GPU$GPU_ID] $job_id metrics OK (non-collapse)"
+  else
+    echo "[R4 worker GPU$GPU_ID] WARNING: $job_id may have collapsed metrics"
+    return 1
+  fi
+}
 
 _run_train() {
   local cfg="$1"
-  python3 scripts/train.py --config "$cfg" --mode pretrain
+  local job_id="$2"
+  local extra=()
+  if [[ "$job_id" == R4_A_* ]]; then
+    extra+=(--replace_log_dir)
+  fi
+  "$PY" scripts/train.py --config "$cfg" --mode pretrain "${extra[@]}"
 }
 
 _mark() {
-  python3 - "$QUEUE_FILE" "$1" "$2" "${3:-}" <<'PY'
+  "$PY" - "$QUEUE_FILE" "$1" "$2" "${3:-}" <<'PY'
 import json, sys
 from datetime import datetime
 from pathlib import Path
@@ -37,7 +60,7 @@ PY
 }
 
 _gate_ok() {
-  python3 - "$QUEUE_FILE" "$1" <<'PY'
+  "$PY" - "$QUEUE_FILE" "$1" <<'PY'
 import json, sys
 from pathlib import Path
 
@@ -63,13 +86,14 @@ PY
 }
 
 _next_job() {
-  python3 - "$QUEUE_FILE" "$GPU_ID" <<'PY'
+  "$PY" - "$QUEUE_FILE" "$GPU_ID" <<'PY'
 import json, sys
 from pathlib import Path
 
 qpath, gpu = sys.argv[1], int(sys.argv[2])
 q = json.loads(Path(qpath).read_text(encoding="utf-8"))
 status_dir = Path("outputs_sdavt_v3_r4/status")
+MOSEI_AUDIO_RERUN = {"R4_A_O_AT", "R4_A_O_AVT", "R4_A_O_AV", "R4_A_O_A"}
 
 def gate_ok(job):
     dep = job.get("depends_on")
@@ -82,7 +106,7 @@ def gate_ok(job):
             return True
     return False
 
-pending = [j for j in q["jobs"] if j.get("status") == "pending" and gate_ok(j)]
+pending = [j for j in q["jobs"] if j.get("status") == "pending" and gate_ok(j) and j["id"] not in MOSEI_AUDIO_RERUN]
 if not pending:
     print("")
     raise SystemExit(0)
@@ -104,7 +128,7 @@ while true; do
     break
   fi
 
-  CONFIG="$(python3 - <<PY
+  CONFIG="$("$PY" - <<PY
 import json
 from pathlib import Path
 q = json.loads(Path("$QUEUE_FILE").read_text(encoding="utf-8"))
@@ -115,12 +139,28 @@ for j in q["jobs"]:
 PY
 )"
 
+  DATASET="$("$PY" - <<PY
+import json
+from pathlib import Path
+q = json.loads(Path("$QUEUE_FILE").read_text(encoding="utf-8"))
+for j in q["jobs"]:
+    if j["id"] == "$JOB_ID":
+        print(j.get("dataset", ""))
+        break
+PY
+)"
+
   echo "[R4 worker GPU$GPU_ID] >>> $JOB_ID config=$CONFIG"
   _mark "$JOB_ID" "running" "gpu$GPU_ID"
 
-  if _run_train "$CONFIG"; then
-    _mark "$JOB_ID" "done" "gpu$GPU_ID"
-    echo "[R4 worker GPU$GPU_ID] <<< $JOB_ID done"
+  if _run_train "$CONFIG" "$JOB_ID"; then
+    if _validate_p4_job "$JOB_ID" "$DATASET"; then
+      _mark "$JOB_ID" "done" "gpu$GPU_ID"
+      echo "[R4 worker GPU$GPU_ID] <<< $JOB_ID done"
+    else
+      _mark "$JOB_ID" "failed" "gpu$GPU_ID collapse_check"
+      echo "[R4 worker GPU$GPU_ID] <<< $JOB_ID FAILED (collapse check)"
+    fi
   else
     _mark "$JOB_ID" "failed" "gpu$GPU_ID"
     echo "[R4 worker GPU$GPU_ID] <<< $JOB_ID FAILED"

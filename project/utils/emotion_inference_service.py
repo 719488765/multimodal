@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import io
 import logging
 import os
@@ -31,7 +32,7 @@ try:
 except ImportError:  # pragma: no cover
     sf = None
 
-from transformers import BertTokenizer  # type: ignore
+from transformers import AutoTokenizer  # type: ignore
 
 from models import MultimodalEmotionModel
 from utils import load_checkpoint, load_config, setup_device
@@ -214,9 +215,25 @@ class EmotionInferenceService:
         self.config: Optional[dict] = None
         self.device: Optional[torch.device] = None
         self.model: Optional[MultimodalEmotionModel] = None
-        self.tokenizer: Optional[BertTokenizer] = None
+        self.tokenizer: Optional[Any] = None
         self._loaded = False
         self._temporal_cfg: Dict[str, Any] = merge_temporal_config()
+
+    @contextlib.contextmanager
+    def _leader_modal_override(self, leader: Optional[str]):
+        if not leader or self.model is None:
+            yield
+            return
+        fusion = getattr(self.model, "fusion_module", None)
+        if fusion is None or not hasattr(fusion, "leader_modal"):
+            yield
+            return
+        old = fusion.leader_modal
+        fusion.leader_modal = leader
+        try:
+            yield
+        finally:
+            fusion.leader_modal = old
 
     def load(self) -> None:
         import os
@@ -233,11 +250,11 @@ class EmotionInferenceService:
         self.device = setup_device(self.config)
 
         self.model = MultimodalEmotionModel(self.config).to(self.device)
-        load_checkpoint(self.checkpoint_path, self.model)
+        load_checkpoint(self.checkpoint_path, self.model, strict=False)
         self.model.eval()
 
         text_backbone = self.config["model"]["text"]["backbone"]
-        self.tokenizer = BertTokenizer.from_pretrained(text_backbone)
+        self.tokenizer = AutoTokenizer.from_pretrained(text_backbone)
         self._loaded = True
         fusion = self.config.get("model", {}).get("attention", {}).get("fusion_strategy", "unknown")
         logger.info(
@@ -342,6 +359,7 @@ class EmotionInferenceService:
         video_decode_mode = "empty"
         frames_extracted = 0
         metadata = sample.get("metadata") or {}
+        inference_profile = metadata.get("inference_profile") or {}
         video_mime = str(metadata.get("video_mime") or "")
         video_filename = str(metadata.get("video_filename") or "")
 
@@ -366,12 +384,13 @@ class EmotionInferenceService:
         if audio_b64:
             audio = preprocess_audio_from_bytes(decode_base64_bytes(audio_b64), self.config)
 
-        text_ids, text_mask = self._preprocess_text(text)
+        skip_text = bool(inference_profile.get("skip_text_encoder"))
+        text_ids, text_mask = (None, None) if skip_text else self._preprocess_text(text)
 
         modalities = self.config["model"].get("modalities", {})
         use_video = modalities.get("use_video", True)
         use_audio = modalities.get("use_audio", True)
-        use_text = modalities.get("use_text", True)
+        use_text = modalities.get("use_text", True) and not skip_text
 
         video_bytes = len(decode_base64_bytes(video_b64)) if video_b64 else 0
         audio_bytes = len(decode_base64_bytes(audio_b64)) if audio_b64 else 0
@@ -379,7 +398,7 @@ class EmotionInferenceService:
         degraded = (
             (use_video and video is None)
             or (use_audio and audio is None)
-            or (use_text and not text)
+            or (use_text and not text and not skip_text)
         )
 
         text_backbone = self.config.get("model", {}).get("text", {}).get("backbone", "bert-base-uncased")
@@ -414,19 +433,24 @@ class EmotionInferenceService:
                 "preprocessed": text_ids is not None,
                 "tokenizer": text_backbone,
                 "token_count": int(text_ids.shape[1]) if text_ids is not None else 0,
+                "bypassed": skip_text,
             },
         }
 
-        result = self._forward(
-            video=video,
-            audio=audio,
-            physiological=None,
-            text_input_ids=text_ids,
-            text_attention_mask=text_mask,
-            has_video=video is not None,
-            has_audio=audio is not None,
-            has_text=bool(text),
-        )
+        leader_override = inference_profile.get("leader_override")
+        with self._leader_modal_override(
+            str(leader_override) if leader_override else None
+        ):
+            result = self._forward(
+                video=video,
+                audio=audio,
+                physiological=None,
+                text_input_ids=text_ids,
+                text_attention_mask=text_mask,
+                has_video=video is not None,
+                has_audio=audio is not None,
+                has_text=bool(text) and not skip_text,
+            )
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
         result["degraded_mode"] = degraded
         result["inference_source"] = "checkpoint"
@@ -472,9 +496,18 @@ class EmotionInferenceService:
                 "已调用训练 checkpoint 前向推理（非 mock）",
                 "文本经 ASR 或用户输入合并后送入 BERT",
                 f"视频解码模式: {video_decode_mode}（video_file=与训练一致抽帧）",
-                "若 decode_mode=single_frame_fallback，建议改用浏览器 webm 短视频 clip",
             ],
         }
+        if inference_profile:
+            result["pipeline_trace"]["inference_profile"] = inference_profile
+            if skip_text:
+                result["pipeline_trace"]["notes"].append(
+                    "中文路由：已 bypass 英文 text encoder（V+A 推理）"
+                )
+            if leader_override:
+                result["pipeline_trace"]["notes"].append(
+                    f"leader_modal 临时覆盖为 {leader_override}"
+                )
         logger.info(
             "[TRAINED_MODEL] forward label=%s id=%s conf=%.3f ms=%.1f degraded=%s probs_top=%s",
             result.get("emotion_label"),

@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-07-05T17:35:00",
+  "queue": {"total": 55, "done": 55, "pending": 0, "failed": 0},
+  "audit_queue_only": {"p0": 0, "collapses": 0, "dupes": 0, "tier2_fail": 1},
+  "tier2": {
+    "meld": {"pass": true, "best_f1": 0.6957, "best_acc": 0.7121, "champion": "M3_M7_combo"},
+    "mosei": {"pass": true, "best_f1": 0.6792, "champion": "F_O_ES"},
+    "crema": {"pass": false, "best_acc": 0.5672, "champion": "C3_C2_w2v_large", "target_acc": 0.63}
+  },
+  "p4_modal": {
+    "mosei": {"jobs": 7, "strict_pass": true, "best_avt_f1": 0.6982},
+    "meld": {"jobs": 7, "strict_pass": true, "best_avt_f1": 0.6818},
+    "crema": {"jobs": 7, "strict_pass": true, "best_avt_f1": 0.3263}
+  },
+  "next_training": {
+    "job": "C4_C2_c3_base_acc",
+    "config": "config/sdavt_v3_r4/p3_c_plus/crema/C4_C2_c3_base_acc.yaml",
+    "tmux": "r4_crema_tier2_c4c2",
+    "gpu": 1,
+    "target": "crema_acc>=0.63"
+  },
+  "tensorboard": {"port": 6008, "logdir": "logs_sdavt_v3_r4", "tmux": "sdavt_r4_tensorboard"}
+}

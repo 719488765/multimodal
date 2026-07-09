@@ -67,6 +67,7 @@ class TemporalNpyEncoder(nn.Module):
             raise ValueError(
                 f"feature dim {x.shape[-1]} != expected {self.input_dim}"
             )
+        x = torch.nan_to_num(x.float(), nan=0.0, posinf=0.0, neginf=0.0)
         x = subsample_temporal_features(x, self.max_seq_len)
         x = self.input_norm(x)
         x = F.relu(self.input_proj(x))

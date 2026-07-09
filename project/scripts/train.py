@@ -770,6 +770,10 @@ def main() -> int:
                 skip_prefixes=["text_extractor.backbone"],
                 strict=False,
             )
+            if mode == "finetune":
+                start_epoch = 0
+                best_loss = float("inf")
+                best_f1 = -float("inf")
             print(f"Partial resume from epoch {start_epoch}, loss={resume_loss}")
         else:
             ckpt = torch.load(resume_path, map_location="cpu")

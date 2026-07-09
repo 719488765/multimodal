@@ -3,6 +3,7 @@ import {
   buildSessionWs,
   checkHealth,
   estimateUploadChunks,
+  fetchModelStatus,
   getApiDisplayUrl,
   getUploadProfile,
   initApiBase,
@@ -296,7 +297,8 @@ export default function App() {
   const videoMimeRef = useRef("video/webm");
   const frameSnapshotsRef = useRef([]);
   const frameIntervalRef = useRef(null);
-  const [checkpointPreset, setCheckpointPreset] = useState("meld_only");
+  const [checkpointPreset, setCheckpointPreset] = useState("sdavt_meld_v3_r4");
+  const [modelStatus, setModelStatus] = useState(null);
 
   const shortEvents = useMemo(() => events.slice(-10).reverse(), [events]);
   const statusText =
@@ -320,7 +322,17 @@ export default function App() {
       neutral: "平静",
       anxious: "焦虑",
       other: "其他",
-    }[emotion?.emotion_label || ""] || "暂无";
+    }[emotion?.final_emotion_label || emotion?.emotion_label || ""] || "暂无";
+  const modelEmotionLabelText =
+    {
+      happy: "开心",
+      sad: "难过",
+      angry: "生气",
+      fear: "害怕",
+      neutral: "平静",
+      anxious: "焦虑",
+      other: "其他",
+    }[emotion?.model_emotion_label || ""] || "—";
   const emotionToneClass =
     {
       happy: "emotion-positive",
@@ -447,6 +459,44 @@ export default function App() {
       cancelled = true;
     };
   }, [apiReady]);
+
+  useEffect(() => {
+    if (!apiReady) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const status = await fetchModelStatus();
+        if (!cancelled) setModelStatus(status);
+      } catch {
+        if (!cancelled) setModelStatus(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiReady]);
+
+  const presetOptions = useMemo(() => {
+    const fromApi = modelStatus?.available_presets;
+    if (Array.isArray(fromApi) && fromApi.length > 0) {
+      return fromApi;
+    }
+    return [
+      { id: "sdavt_meld_v3_r4", label: "sdavt_meld_v3_r4（R4 冠军 M3_M7 F1=0.696，推荐）", recommended: true },
+      { id: "sdavt_meld_zh_agent", label: "sdavt_meld_zh_agent（中文 BERT + leader_audio）", recommended: true },
+      { id: "meld_only", label: "meld_only（MELD 单域，对照）" },
+      { id: "ap2_m1", label: "ap2_m1（三混合 F1≈0.56）" },
+      { id: "agent_chinese", label: "agent_chinese（中文 BERT 微调）" },
+      { id: "mosei_only", label: "mosei_only（MOSEI 单域，实验）", experimental: true },
+      { id: "ap4_w005", label: "ap4_w005（DA 预训练）" },
+    ];
+  }, [modelStatus]);
+
+  const loadedPresetId =
+    modelStatus?.model?.preset ||
+    modelStatus?.model?.checkpoint_preset ||
+    modelStatus?.checkpoint_preset_env ||
+    checkpointPreset;
 
   async function ensureCaptureDevice() {
     if (mediaStreamRef.current) {
@@ -1194,20 +1244,32 @@ export default function App() {
           </p>
           <p>当前状态：{statusText}</p>
           <p>实时通道：{wsConnected ? "已连接" : "未连接"}</p>
-          <p className="preset-row">
-            推理权重：
+          <div className="model-switcher">
+            <div className="model-switcher-head">
+              <span className="model-switcher-title">推理模型</span>
+              {loadedPresetId === checkpointPreset ? (
+                <span className="chip ok model-loaded-chip">当前加载：{loadedPresetId}</span>
+              ) : (
+                <span className="chip warn model-loaded-chip">后端：{loadedPresetId} · 请求：{checkpointPreset}</span>
+              )}
+            </div>
             <select
+              className="model-switcher-select"
               value={checkpointPreset}
               onChange={(e) => setCheckpointPreset(e.target.value)}
               disabled={capturing || isAnalyzing}
             >
-              <option value="meld_only">meld_only（MELD 单域，推荐 Agent）</option>
-              <option value="ap2_m1">ap2_m1（三混合 F1≈0.56）</option>
-              <option value="mosei_only">mosei_only（MOSEI 单域，实验）</option>
-              <option value="agent_chinese">agent_chinese（中文 BERT 微调）</option>
-              <option value="ap4_w005">ap4_w005（DA 预训练）</option>
+              {presetOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label || opt.id}
+                  {opt.experimental ? " [实验]" : opt.recommended ? " [推荐]" : ""}
+                </option>
+              ))}
             </select>
-          </p>
+            <p className="model-switcher-hint">
+              切换 preset 后下次推理生效；服务端默认 preset 由 .env 的 MODEL_CHECKPOINT_PRESET 决定。
+            </p>
+          </div>
         </div>
         <div className="status-chips">
           <span className={`chip ${backendOk ? "ok" : backendOk === false ? "bad" : "warn"}`}>
@@ -1318,8 +1380,8 @@ export default function App() {
             </button>
           </div>
           <p className="hint">
-            操作说明：点击「开始录制」→ 连续说话（建议 5–{getCaptureMaxSec()} 秒）→ 点击「结束并推理」。
-            系统将完整采集（最长 <strong>{getCaptureMaxSec()} 秒</strong>）按 <strong>3 秒</strong>一窗送入模型，并以近端加权聚合最终情绪。
+            操作说明：点击「开始录制」→ 连续说话（中文场景建议 <strong>≥5 秒</strong>，最长 {getCaptureMaxSec()} 秒）→ 点击「结束并推理」。
+            系统将完整采集按 <strong>3 秒</strong>一窗送入模型；中文 ASR 默认 bypass 英文 text encoder，并结合语义校准。
             {isCloudflareQuickTunnel() ? (
               <span className="hint-warn"> Cloudflare 隧道下最长约 10 秒以控制请求超时。</span>
             ) : null}
@@ -1398,7 +1460,10 @@ export default function App() {
           ) : null}
           {emotion?.emotion_label ? (
             <p className="hint">
-              回复依据（情绪模型）：{emotionLabelText} · 置信度 {Number(emotion.confidence || 0).toFixed(2)}
+              最终情绪（校准/仲裁后）：{emotionLabelText} · 置信度 {Number(emotion.confidence || 0).toFixed(2)}
+              {emotion?.model_emotion_label && emotion.model_emotion_label !== emotion.emotion_label ? (
+                <> · 模型原始：{modelEmotionLabelText}</>
+              ) : null}
               {emotion?.top_emotions?.length
                 ? ` · Top3: ${emotion.top_emotions.map((x) => `${EMOTION_CN[x.label] || x.label}:${Number(x.prob).toFixed(2)}`).join(" / ")}`
                 : ""}

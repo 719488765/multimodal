@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from utils.asr_emotion_calibration import apply_asr_emotion_calibration
 
+BENCHMARK = ROOT / "data" / "agent_benchmark" / "zh_cases.json"
 
 CASES = [
     {
@@ -55,6 +57,19 @@ CASES = [
         "expect_label": "sad",
     },
     {
+        "name": "angry_asr_vs_neutral",
+        "text": "我真的太生气了！",
+        "emotion": {
+            "emotion_id": 4,
+            "emotion_label": "neutral",
+            "confidence": 0.70,
+            "valence": -0.2,
+            "arousal": 0.5,
+            "all_probs": [0.05, 0.05, 0.08, 0.05, 0.70, 0.05, 0.02],
+        },
+        "expect_label": "angry",
+    },
+    {
         "name": "neutral_weather_no_calib",
         "text": "今天阴天，气温十五度。",
         "emotion": {
@@ -70,9 +85,37 @@ CASES = [
 ]
 
 
-def run_calibration_cases() -> int:
+def _load_cases(extra_path: Path | None) -> list:
+    if extra_path and extra_path.is_file():
+        return json.loads(extra_path.read_text(encoding="utf-8"))
+    if BENCHMARK.is_file():
+        out = []
+        for row in json.loads(BENCHMARK.read_text(encoding="utf-8")):
+            probs = row.get("model_probs") or [0.14] * 7
+            label = row.get("model_label") or "neutral"
+            eid = ["happy", "sad", "angry", "fear", "neutral", "anxious", "other"].index(label)
+            out.append(
+                {
+                    "name": row["name"],
+                    "text": row.get("text", ""),
+                    "emotion": {
+                        "emotion_id": eid,
+                        "emotion_label": label,
+                        "confidence": float(probs[eid]),
+                        "valence": 0.0,
+                        "arousal": 0.0,
+                        "all_probs": probs,
+                    },
+                    "expect_label": row.get("expect_final") or row.get("expect_label"),
+                }
+            )
+        return out
+    return CASES
+
+
+def run_calibration_cases(cases: list) -> int:
     failed = 0
-    for case in CASES:
+    for case in cases:
         out = apply_asr_emotion_calibration(dict(case["emotion"]), case["text"])
         label = out.get("emotion_label")
         if label != case["expect_label"]:
@@ -121,6 +164,7 @@ def run_checkpoint_case(config: str, checkpoint: str, device: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--with-checkpoint", action="store_true")
+    parser.add_argument("--cases", type=Path, default=None, help="JSON case list (default: zh_cases.json)")
     parser.add_argument(
         "--config",
         default="config/rerun/accuracy_plan/ap2_M1_chinese_text_agent.yaml",
@@ -132,7 +176,8 @@ def main() -> int:
     parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
 
-    failed = run_calibration_cases()
+    cases = _load_cases(args.cases)
+    failed = run_calibration_cases(cases)
     if args.with_checkpoint:
         failed += run_checkpoint_case(args.config, args.checkpoint, args.device)
     return 1 if failed else 0

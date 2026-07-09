@@ -441,6 +441,11 @@ export async function checkHealth() {
   return requestJson("/api/v1/health", { timeoutMs: 15000 });
 }
 
+export async function fetchModelStatus() {
+  await initApiBase();
+  return requestJson("/api/v1/model/status", { timeoutMs: 15000 });
+}
+
 export async function ingestChunk(payload) {
   return requestJson("/api/v1/ingest/chunk", {
     method: "POST",

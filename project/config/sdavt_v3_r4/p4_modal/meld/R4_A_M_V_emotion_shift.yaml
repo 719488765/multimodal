@@ -33,7 +33,7 @@ model:
     num_layers: 3
     dropout: 0.25
     fusion_strategy: emotion_shift
-    leader_modal: text
+    leader_modal: video
     num_gat_layers: 2
     use_fmc_loss: false
     use_context_window: false
@@ -121,7 +121,7 @@ paths:
   log_dir: logs_sdavt_v3_r4/
   output_dir: outputs_sdavt_v3_r4/
 device: cuda
-num_workers: 4
+num_workers: 0
 pin_memory: true
 experiment:
   name: SDAVT_R4_R4_A_M_V
@@ -138,3 +138,5 @@ experiment:
   - logs_rerun
   phase: p4_modal
   job_id: R4_A_M_V
+  log_run_dir: SDAVT_R4_R4_A_M_V
+  replace_log_dir: true

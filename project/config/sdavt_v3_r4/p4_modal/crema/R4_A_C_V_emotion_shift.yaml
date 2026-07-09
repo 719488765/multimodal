@@ -33,9 +33,10 @@ model:
     num_layers: 3
     dropout: 0.25
     fusion_strategy: emotion_shift
-    leader_modal: audio
+    leader_modal: video
     num_gat_layers: 2
     use_fmc_loss: false
+    modality_dropout: 0.0
   output:
     emotion_classes: 6
     emotion_dimensions: 2
@@ -133,3 +134,5 @@ experiment:
   - logs_rerun
   phase: p4_modal
   job_id: R4_A_C_V
+  log_run_dir: SDAVT_R4_R4_A_C_V
+  replace_log_dir: true

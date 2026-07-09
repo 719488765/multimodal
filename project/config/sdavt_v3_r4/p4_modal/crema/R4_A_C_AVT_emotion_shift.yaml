@@ -36,6 +36,7 @@ model:
     leader_modal: audio
     num_gat_layers: 2
     use_fmc_loss: false
+    modality_dropout: 0.0
   output:
     emotion_classes: 6
     emotion_dimensions: 2
@@ -133,3 +134,5 @@ experiment:
   - logs_rerun
   phase: p4_modal
   job_id: R4_A_C_AVT
+  log_run_dir: SDAVT_R4_R4_A_C_AVT
+  replace_log_dir: true

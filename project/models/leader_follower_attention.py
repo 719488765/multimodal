@@ -193,7 +193,7 @@ class MultimodalLeaderFollowerFusion(nn.Module):
         
         self.layer_norm = nn.LayerNorm(hidden_dim)
         
-    def forward(self, video_feat, audio_feat, physiological_feat, text_feat):
+    def forward(self, video_feat, audio_feat, physiological_feat, text_feat, active_mask=None):
         """
         Args:
             video_feat: (B, hidden_dim) 或 (B, T, hidden_dim)
@@ -203,24 +203,51 @@ class MultimodalLeaderFollowerFusion(nn.Module):
         Returns:
             fused_features: (B, hidden_dim) 或 (B, T, hidden_dim)
         """
-        is_temporal = len(text_feat.shape) == 3
-        
+        if active_mask is None:
+            active_mask = {
+                "video": True,
+                "audio": True,
+                "physiological": True,
+                "text": True,
+            }
+
+        modal_feats = {
+            "video": video_feat,
+            "audio": audio_feat,
+            "physiological": physiological_feat,
+            "text": text_feat,
+        }
+        is_temporal = len(modal_feats["text"].shape) == 3
+
         if not is_temporal:
-            # 扩展到时序维度
-            text_feat = text_feat.unsqueeze(1)  # (B, 1, hidden_dim)
-            video_feat = video_feat.unsqueeze(1)
-            audio_feat = audio_feat.unsqueeze(1)
-            physiological_feat = physiological_feat.unsqueeze(1)
-        
-        # 使用文本作为领导者，引导其他模态
-        enhanced_video, _ = self.lf_modules['video'](text_feat, video_feat)
-        enhanced_audio, _ = self.lf_modules['audio'](text_feat, audio_feat)
-        enhanced_physiological, _ = self.lf_modules['physiological'](text_feat, physiological_feat)
-        
-        # 融合所有模态
-        combined = torch.cat([text_feat, enhanced_video, enhanced_audio, enhanced_physiological], dim=-1)
-        fused = self.final_fusion(combined)
-        fused = self.layer_norm(fused)
+            for name in modal_feats:
+                modal_feats[name] = modal_feats[name].unsqueeze(1)
+
+        leader = self.leader_modal
+        if not active_mask.get(leader, True):
+            for name in modal_feats:
+                if active_mask.get(name, True):
+                    leader = name
+                    break
+        leader_feat = modal_feats[leader]
+
+        parts = [leader_feat]
+        for name, lf in self.lf_modules.items():
+            if not active_mask.get(name, True):
+                continue
+            if name == leader:
+                continue
+            enhanced, _ = lf(leader_feat, modal_feats[name])
+            parts.append(enhanced)
+
+        if len(parts) == 1:
+            fused = self.layer_norm(parts[0])
+        else:
+            while len(parts) < 4:
+                parts.append(torch.zeros_like(leader_feat))
+            combined = torch.cat(parts[:4], dim=-1)
+            fused = self.final_fusion(combined)
+            fused = self.layer_norm(fused)
         
         if not is_temporal:
             fused = fused.squeeze(1)

@@ -138,3 +138,5 @@ experiment:
   - logs_rerun
   phase: p4_modal
   job_id: R4_A_M_VT
+  log_run_dir: SDAVT_R4_R4_A_M_VT
+  replace_log_dir: true

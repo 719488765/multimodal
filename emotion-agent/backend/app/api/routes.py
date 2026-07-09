@@ -22,7 +22,8 @@ from app.services.upload_buffer import assemble as assemble_upload, put_chunk
 from app.services.asr_service import ASRService
 from app.services.ingest_buffer import IngestBuffer
 from app.services.llm_service import LLMService
-from app.core.config import settings
+from app.core.config import CHECKPOINT_PRESETS, PRESET_METADATA, settings
+from app.services.chinese_inference_router import build_inference_profile
 from app.services.emotion_arbitration import arbitrate_emotion
 from app.services.model_router import ModelRouter
 from app.services.session_store import SessionStore
@@ -152,8 +153,6 @@ def health() -> dict:
 @router.get("/model/status")
 def model_status() -> dict:
     """详细模型绑定状态，用于确认是否使用训练 checkpoint（非 mock）。"""
-    from app.core.config import settings
-
     router_ = get_model_router()
     model_health = router_.health()
     using_trained = (
@@ -161,6 +160,21 @@ def model_status() -> dict:
         and model_health.get("loaded") is True
         and model_health.get("provider") == "current"
     )
+    available_presets = []
+    for preset_id, paths in CHECKPOINT_PRESETS.items():
+        meta = PRESET_METADATA.get(preset_id, {})
+        available_presets.append(
+            {
+                "id": preset_id,
+                "train_config": paths.get("train_config"),
+                "checkpoint": paths.get("checkpoint"),
+                "label": meta.get("label", preset_id),
+                "best_f1": meta.get("best_f1"),
+                "best_acc": meta.get("best_acc"),
+                "recommended": bool(meta.get("recommended")),
+                "experimental": bool(meta.get("experimental")),
+            }
+        )
     return {
         "ok": True,
         "using_trained_checkpoint": using_trained,
@@ -171,6 +185,7 @@ def model_status() -> dict:
             "mock": "inference_source=mock_heuristic 或 model_provider=mock",
             "fallback": "inference_source=mock_fallback（真实推理失败后降级）",
         },
+        "available_presets": available_presets,
         "model": model_health,
     }
 
@@ -241,12 +256,22 @@ async def _emotion_infer_core(
     )
     merged_text = text or asr_result.get("text", "")
     text_source = "user_input" if (text or "").strip() else ("asr" if (asr_result.get("text") or "").strip() else "empty")
+    deploy = _load_deploy_postprocess_config()
+    meta = dict(metadata or {})
+    meta["text_source"] = text_source
+    inference_profile = build_inference_profile(
+        asr_text=asr_result.get("text", "") or "",
+        user_text=text or "",
+        metadata=meta,
+        deploy_cfg=deploy,
+    )
+    meta["inference_profile"] = inference_profile
     sample: Dict[str, Any] = {
         "session_id": session_id,
         "text": merged_text,
         "video_chunk_b64": video_chunk_b64,
         "audio_chunk_b64": audio_chunk_b64,
-        "metadata": metadata or {},
+        "metadata": meta,
     }
 
     if not sample.get("video_chunk_b64") or not sample.get("audio_chunk_b64"):
@@ -270,11 +295,16 @@ async def _emotion_infer_core(
 
     deploy = _load_deploy_postprocess_config()
     arb_cfg = deploy.get("emotion_arbitration") or {}
+    flat_thr = float(
+        inference_profile.get("flat_threshold")
+        or arb_cfg.get("flat_threshold")
+        or 0.38
+    )
     arbitrate_emotion(
         emotion,
         merged_text,
         float(asr_result.get("confidence", 0.0) or 0.0),
-        flat_threshold=float(arb_cfg.get("flat_threshold", 0.38)),
+        flat_threshold=flat_thr,
         low_conf_threshold=float(arb_cfg.get("low_conf_threshold", 0.42)),
         neutral_override_threshold=float(arb_cfg.get("neutral_override_threshold", 0.55)),
     )
@@ -299,6 +329,13 @@ async def _emotion_infer_core(
             "confidence": asr_result.get("confidence", 0.0),
             "text_preview": (asr_result.get("text", "") or "")[:60],
             "error": asr_result.get("error", ""),
+        },
+        {
+            "stage": "2_language_detect",
+            "status": "ok",
+            "language": inference_profile.get("language", "unknown"),
+            "skip_text": inference_profile.get("skip_text_encoder", False),
+            "leader_override": inference_profile.get("leader_override"),
         },
         {
             "stage": "3_text_merge",

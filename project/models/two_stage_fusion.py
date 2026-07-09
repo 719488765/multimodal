@@ -61,10 +61,19 @@ class TwoStageFusion(nn.Module):
     第一阶段：上下文建模（使用图注意力网络）
     第二阶段：跨模态融合（使用跨模态注意力）
     """
-    def __init__(self, hidden_dim=512, num_heads=8, num_gat_layers=2, num_fusion_layers=2, dropout=0.1):
+    def __init__(
+        self,
+        hidden_dim=512,
+        num_heads=8,
+        num_gat_layers=2,
+        num_fusion_layers=2,
+        dropout=0.1,
+        leader_modal="text",
+    ):
         super(TwoStageFusion, self).__init__()
-        
+
         self.hidden_dim = hidden_dim
+        self.leader_modal = leader_modal
         
         # 第一阶段：图注意力网络（上下文建模）
         self.gat_layers = nn.ModuleList([
@@ -110,7 +119,7 @@ class TwoStageFusion(nn.Module):
             nn.Linear(hidden_dim, hidden_dim)
         )
         
-    def forward(self, video_feat, audio_feat, physiological_feat, text_feat):
+    def forward(self, video_feat, audio_feat, physiological_feat, text_feat, active_mask=None):
         """
         Args:
             video_feat: (B, hidden_dim) 或 (B, T, hidden_dim)
@@ -120,14 +129,38 @@ class TwoStageFusion(nn.Module):
         Returns:
             fused_features: (B, hidden_dim) 或 (B, T, hidden_dim)
         """
-        is_temporal = len(text_feat.shape) == 3
+        if active_mask is None:
+            active_mask = {
+                "video": True,
+                "audio": True,
+                "physiological": True,
+                "text": True,
+            }
+
+        modal_feats = {
+            "video": video_feat,
+            "audio": audio_feat,
+            "physiological": physiological_feat,
+            "text": text_feat,
+        }
+        is_temporal = len(modal_feats["text"].shape) == 3
         
         if not is_temporal:
-            # 扩展到时序维度
-            video_feat = video_feat.unsqueeze(1)  # (B, 1, hidden_dim)
-            audio_feat = audio_feat.unsqueeze(1)
-            physiological_feat = physiological_feat.unsqueeze(1)
-            text_feat = text_feat.unsqueeze(1)
+            for name in modal_feats:
+                modal_feats[name] = modal_feats[name].unsqueeze(1)
+
+        video_feat = modal_feats["video"]
+        audio_feat = modal_feats["audio"]
+        physiological_feat = modal_feats["physiological"]
+        text_feat = modal_feats["text"]
+
+        leader = self.leader_modal
+        if not active_mask.get(leader, True):
+            for name in modal_feats:
+                if active_mask.get(name, True):
+                    leader = name
+                    break
+        leader_feat = modal_feats[leader]
         
         # 堆叠所有模态: (B, num_modalities, hidden_dim)
         modalities = torch.stack([video_feat, audio_feat, physiological_feat, text_feat], dim=1)
@@ -185,15 +218,19 @@ class TwoStageFusion(nn.Module):
             physiological_feat, _ = self.self_attention_layers[i](physiological_feat)
             text_feat, _ = self.self_attention_layers[i](text_feat)
             
-            # 跨模态注意力（以文本为query）
-            enhanced_video = self.cross_attention_layers[i](text_feat, video_feat)
-            enhanced_audio = self.cross_attention_layers[i](text_feat, audio_feat)
-            enhanced_physiological = self.cross_attention_layers[i](text_feat, physiological_feat)
-            
-            # 残差连接和层归一化
-            video_feat = self.layer_norms[i * 2](video_feat + enhanced_video)
-            audio_feat = self.layer_norms[i * 2](audio_feat + enhanced_audio)
-            physiological_feat = self.layer_norms[i * 2](physiological_feat + enhanced_physiological)
+            # 跨模态注意力（以 leader 为 query）
+            enhanced_video = self.cross_attention_layers[i](leader_feat, video_feat)
+            enhanced_audio = self.cross_attention_layers[i](leader_feat, audio_feat)
+            enhanced_physiological = self.cross_attention_layers[i](leader_feat, physiological_feat)
+
+            if active_mask.get("video", True):
+                video_feat = self.layer_norms[i * 2](video_feat + enhanced_video)
+            if active_mask.get("audio", True):
+                audio_feat = self.layer_norms[i * 2](audio_feat + enhanced_audio)
+            if active_mask.get("physiological", True):
+                physiological_feat = self.layer_norms[i * 2](
+                    physiological_feat + enhanced_physiological
+                )
             
             # 前馈网络
             video_feat = self.layer_norms[i * 2 + 1](video_feat + self.ffn_layers[i](video_feat))
@@ -201,9 +238,23 @@ class TwoStageFusion(nn.Module):
             physiological_feat = self.layer_norms[i * 2 + 1](physiological_feat + self.ffn_layers[i](physiological_feat))
             text_feat = self.layer_norms[i * 2 + 1](text_feat + self.ffn_layers[i](text_feat))
         
-        # 最终融合
-        combined = torch.cat([video_feat, audio_feat, physiological_feat, text_feat], dim=-1)
-        fused = self.final_fusion(combined)
+        # 最终融合（仅激活模态）
+        active_parts = []
+        for name, feat in (
+            ("video", video_feat),
+            ("audio", audio_feat),
+            ("physiological", physiological_feat),
+            ("text", text_feat),
+        ):
+            if active_mask.get(name, True):
+                active_parts.append(feat)
+        if len(active_parts) == 1:
+            fused = active_parts[0]
+        else:
+            while len(active_parts) < 4:
+                active_parts.append(torch.zeros_like(active_parts[0]))
+            combined = torch.cat(active_parts[:4], dim=-1)
+            fused = self.final_fusion(combined)
         
         if not is_temporal:
             fused = fused.squeeze(1)

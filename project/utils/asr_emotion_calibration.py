@@ -9,31 +9,14 @@ import re
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple
 
+from utils.zh_sentiment_lexicon import (
+    LAUGHTER_ONLY_RE,
+    intensity_factor,
+    match_zh_sentiment,
+)
+
 EMOTION_NAMES = ["happy", "sad", "angry", "fear", "neutral", "anxious", "other"]
 EMOTION_NAMES_CN = ["开心", "难过", "生气", "害怕", "平静", "焦虑", "其他"]
-
-POSITIVE_PATTERNS: List[Tuple[int, re.Pattern]] = [
-    (
-        0,
-        re.compile(
-            r"高兴|开心|快乐|愉快|喜悦|兴奋|成功|太好了|真棒|哈哈|呵呵|好开心|很高兴",
-            re.I,
-        ),
-    ),
-]
-NEGATIVE_PATTERNS: List[Tuple[int, re.Pattern]] = [
-    (1, re.compile(r"难过|伤心|悲伤|失落|沮丧|想哭|痛苦|不开心|难受|郁闷|好惨|委屈", re.I)),
-    (2, re.compile(r"生气|愤怒|恼火|气愤|烦死了|讨厌|火大|气死", re.I)),
-    (3, re.compile(r"害怕|恐惧|担心|紧张|慌|吓|可怕|好怕", re.I)),
-    (5, re.compile(r"焦虑|不安|烦躁|压力大|好烦|烦心", re.I)),
-]
-NEUTRAL_PATTERNS = re.compile(r"还好|一般|普通|没什么|平静|冷静|正常|普通", re.I)
-# 英文 ASR 回退（Whisper 偶发英文输出）
-EN_POSITIVE_RE = re.compile(r"\b(happy|glad|joy|great|wonderful|laugh|haha|lol)\b", re.I)
-EN_NEGATIVE_SAD_RE = re.compile(r"\b(sad|unhappy|depressed|miserable|crying)\b", re.I)
-EN_NEGATIVE_ANGRY_RE = re.compile(r"\b(angry|mad|furious|annoyed)\b", re.I)
-EN_NEGATIVE_FEAR_RE = re.compile(r"\b(scared|afraid|fear|worried|nervous)\b", re.I)
-LAUGHTER_ONLY_RE = re.compile(r"^(哈{2,}|呵{2,}|[哈呵！]+)+$", re.I)
 
 VALENCE_FLOOR = {
     0: 0.25,
@@ -51,28 +34,7 @@ NON_HAPPY_TOP_IDS = {1, 2, 3, 4, 5, 6}
 
 def match_asr_emotion_target(text: str) -> Optional[int]:
     """从 ASR 文本推断目标情绪 id（供校准与仲裁共用）。"""
-    if not text or not text.strip():
-        return None
-    t = text.strip()
-    if LAUGHTER_ONLY_RE.match(t):
-        return 0
-    for eid, pat in POSITIVE_PATTERNS:
-        if pat.search(t):
-            return eid
-    for eid, pat in NEGATIVE_PATTERNS:
-        if pat.search(t):
-            return eid
-    if NEUTRAL_PATTERNS.search(t):
-        return 4
-    if EN_POSITIVE_RE.search(t):
-        return 0
-    if EN_NEGATIVE_SAD_RE.search(t):
-        return 1
-    if EN_NEGATIVE_ANGRY_RE.search(t):
-        return 2
-    if EN_NEGATIVE_FEAR_RE.search(t):
-        return 3
-    return None
+    return match_zh_sentiment(text)
 
 
 _match_target = match_asr_emotion_target
@@ -265,7 +227,7 @@ def apply_asr_emotion_calibration(
     elif reason == "neutral_asr_vs_flat_wrong_top":
         boosted = _apply_boost(norm, target, boost=0.35, neutral_suppress=0.15)
     else:
-        boosted = _apply_boost(norm, target)
+        boosted = _apply_boost(norm, target, boost=0.22 * intensity_factor(text))
 
     valence = float(emotion.get("valence", 0.0))
     arousal = float(emotion.get("arousal", 0.0))

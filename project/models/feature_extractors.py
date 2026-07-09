@@ -290,7 +290,14 @@ class AudioFeatureExtractor(nn.Module):
                     f"precomputed audio feature dim {audio_waveform.shape[-1]} "
                     f"!= expected {self.precomputed_feature_dim}"
                 )
-            seq_feats, pooled = self.temporal_encoder(audio_waveform, return_pooled=True)
+            x = torch.nan_to_num(
+                audio_waveform.float(), nan=0.0, posinf=0.0, neginf=0.0
+            )
+            # MOSEI COVAREP: stable mean-pool + MLP (BiLSTM backward was NaN-prone).
+            if self.audio_mode == "precomputed":
+                pooled = x.mean(dim=1)
+                return self.feature_projection(pooled)
+            seq_feats, pooled = self.temporal_encoder(x, return_pooled=True)
             return seq_feats if seq_feats.shape[1] > 1 else pooled
 
         # 原始波形 (B, T)

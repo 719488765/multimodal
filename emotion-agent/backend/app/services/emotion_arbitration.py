@@ -53,28 +53,9 @@ def _import_asr_matcher():
 
 
 def _asr_sentiment_hint(text: str) -> Optional[int]:
-    t = (text or "").strip()
-    if not t:
-        return None
-
     matcher = _import_asr_matcher()
     if matcher is not None:
-        target = matcher(t)
-        if target is not None:
-            return target
-
-    if _LAUGHTER_ONLY_RE.match(t) or _POSITIVE_RE.search(t) or _EN_POSITIVE.search(t):
-        return 0
-    if _NEGATIVE_SAD.search(t) or _EN_SAD.search(t):
-        return 1
-    if _NEGATIVE_ANGRY.search(t) or _EN_ANGRY.search(t):
-        return 2
-    if _NEGATIVE_FEAR.search(t) or _EN_FEAR.search(t):
-        return 3
-    if _NEUTRAL_RE.search(t):
-        return 4
-    if _NEGATIVE_ANXIOUS.search(t):
-        return 5
+        return matcher((text or "").strip())
     return None
 
 

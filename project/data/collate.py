@@ -72,7 +72,9 @@ def multimodal_collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         out["audio"] = merged_wave
         out["audio_precomputed"] = merged_pre
     elif audio_pre is not None:
-        out["audio"] = audio_pre
+        # Precomputed COVAREP/OpenFace: route via audio_precomputed only (avoid
+        # duplicate 3D tensor on `audio` which confused the wav2vec code path).
+        out["audio"] = None
         out["audio_precomputed"] = audio_pre
     else:
         out["audio"] = audio_wave

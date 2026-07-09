@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-07-08T23:55:09.885164+00:00",
+  "mode": "parallel_gpu0_meld_v_gpu1_c4c3",
+  "C4_C3": {
+    "csv": "logs_sdavt_v3_r4/SDAVT_R4_C4_C3_c3_warmstart_acc/metrics.csv",
+    "exists": true,
+    "last_val_epoch": "79",
+    "best_acc": 0.604839,
+    "best_acc_epoch": "65",
+    "best_f1": 0.605655,
+    "best_f1_epoch": "65",
+    "tier2": "PARTIAL",
+    "baseline_c3_c2_acc": 0.5672
+  },
+  "R4_A_M_V": {
+    "csv": "logs_sdavt_v3_r4/SDAVT_R4_R4_A_M_V/metrics.csv",
+    "exists": true,
+    "last_val_epoch": "24",
+    "best_acc": 0.423285,
+    "best_acc_epoch": "0",
+    "best_f1": 0.268985,
+    "best_f1_epoch": "9",
+    "ep0_f1": 0.25177,
+    "validate_pass": false
+  },
+  "crema_champion": "C4_C3"
+}

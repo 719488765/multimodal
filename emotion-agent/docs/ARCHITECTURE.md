@@ -1,21 +1,28 @@
 # Emotion Agent 系统架构与数据流文档
 
-> 版本：2026-06-04  
+> 版本：2026-07-07  
 > 范围：`multimodal/emotion-agent/` + `multimodal/project/`（训练模型推理运行时）  
+> **全栈主文档**：[`project/docs/MASTER_SYSTEM_ARCHITECTURE_AND_EXPERIMENT_SUMMARY.md`](../../project/docs/MASTER_SYSTEM_ARCHITECTURE_AND_EXPERIMENT_SUMMARY.md)  
 > **系统架构总览（论文/答辩用）**：[`project/docs/SYSTEM_ARCHITECTURE_OVERVIEW.md`](../../project/docs/SYSTEM_ARCHITECTURE_OVERVIEW.md) · 配套图 [`figures/system_architecture_figure.html`](../../project/docs/figures/system_architecture_figure.html)  
 > **准确率审计与路线图**：[`project/docs/EMOTION_ACCURACY_AUDIT_AND_ROADMAP.md`](../../project/docs/EMOTION_ACCURACY_AUDIT_AND_ROADMAP.md)
 
 ---
 
-## 0. 部署权重与后处理（2026-06）
+## 0. 部署权重与后处理（2026-07）
 
 | 环节 | 说明 |
 |------|------|
-| 默认 preset | **`meld_only`**（MELD 单域 mp4，与在线 ResNet 一致） |
-| 可选 | `ap2_m1` 三混合、`mosei_only`（注意 npy 域差）、`agent_chinese` |
-| ASR 校准 | `project/utils/asr_emotion_calibration.py`（含扁平概率 + 纯「哈哈」） |
-| 仲裁 | `backend/app/services/emotion_arbitration.py` → `final_emotion_label` 供 UI/LLM |
-| 切换脚本 | `project/scripts/apply_deploy_preset.sh meld_only` |
+| 默认 preset | **`sdavt_meld_v3_r4`** → R4 冠军 **M3_M7_combo**（F1≈0.696） |
+| 中文场景 preset | **`sdavt_meld_zh_agent`** → M3_M7 + bert-base-chinese + leader_audio（需 GPU 微调） |
+| 中文工程路由 | `chinese_inference_router.py` + `config_agent_deploy.yaml` → `chinese_agent` |
+| 对照 | `meld_only`、`ap2_m1`、`agent_chinese` |
+| 实验用 | `sdavt_mosei_r4`、`sdavt_crema_r4`（在线域差，勿作默认） |
+| 部署 YAML | `project/config/config_agent_deploy.yaml`（temporal + ASR 校准/仲裁） |
+| ASR 校准 | `project/utils/asr_emotion_calibration.py` |
+| 仲裁 | `backend/app/services/emotion_arbitration.py` → `final_emotion_label` |
+| 切换脚本 | `project/scripts/apply_deploy_preset.sh sdavt_meld_v3_r4` |
+| 中文基准 | `python3 project/scripts/eval_zh_agent_benchmark.py` |
+| 前端 | 模型切换面板 + `/api/v1/model/status` + 模型原始/最终双行展示 |
 
 ---
 

@@ -32,6 +32,11 @@ class MultimodalEmotionModel(nn.Module):
         
         self.config = config
         model_config = config['model']
+        modalities = model_config.get('modalities', {})
+        self.use_video = bool(modalities.get('use_video', True))
+        self.use_audio = bool(modalities.get('use_audio', True))
+        self.use_physiological = bool(modalities.get('use_physiological', True))
+        self.use_text = bool(modalities.get('use_text', True))
         
         # 特征提取器
         self.video_extractor = VideoFeatureExtractor(
@@ -73,7 +78,8 @@ class MultimodalEmotionModel(nn.Module):
                 hidden_dim=attention_config['hidden_dim'],
                 num_emotion_classes=output_config['emotion_classes'],
                 num_heads=attention_config['num_heads'],
-                dropout=attention_config['dropout']
+                dropout=attention_config['dropout'],
+                leader_modal=attention_config.get('leader_modal', 'text'),
             )
             self.use_emotion_shift = True
         elif fusion_strategy == 'leader_follower':
@@ -92,7 +98,8 @@ class MultimodalEmotionModel(nn.Module):
                 num_heads=attention_config['num_heads'],
                 num_gat_layers=attention_config.get('num_gat_layers', 2),
                 num_fusion_layers=attention_config['num_layers'],
-                dropout=attention_config['dropout']
+                dropout=attention_config['dropout'],
+                leader_modal=attention_config.get('leader_modal', 'text'),
             )
             self.use_emotion_shift = False
         else:
@@ -146,8 +153,25 @@ class MultimodalEmotionModel(nn.Module):
             )
         else:
             self.trend_predictor = None
+
+    def _infer_batch_size(self, video, audio, physiological, text_input_ids, audio_precomputed):
+        for tensor in (video, audio, physiological, text_input_ids, audio_precomputed):
+            if tensor is not None:
+                return tensor.shape[0]
+        return 1
+
+    def _zero_feature(self, batch_size, output_dim, device):
+        return torch.zeros(batch_size, output_dim, device=device)
+
+    def _build_active_mask(self, video, audio, physiological, text_input_ids, audio_precomputed):
+        return {
+            'video': self.use_video and video is not None,
+            'audio': self.use_audio and (audio is not None or audio_precomputed is not None),
+            'physiological': self.use_physiological and physiological is not None,
+            'text': self.use_text and text_input_ids is not None,
+        }
         
-    def forward(self, video=None, audio=None, physiological=None, text=None, 
+    def forward(self, video=None, audio=None, physiological=None, text=None,
                 text_input_ids=None, text_attention_mask=None, previous_emotions=None,
                 audio_precomputed=None, dataset_ids=None, context_text_input_ids=None,
                 context_text_attention_mask=None, return_fmc_loss=False, return_domain_logits=False, **kwargs):
@@ -174,40 +198,42 @@ class MultimodalEmotionModel(nn.Module):
         """
         # 特征提取
         features = {}
-        
-        if video is not None:
+        device = next(self.parameters()).device
+        batch_size = self._infer_batch_size(
+            video, audio, physiological, text_input_ids, audio_precomputed
+        )
+        active_mask = self._build_active_mask(
+            video, audio, physiological, text_input_ids, audio_precomputed
+        )
+
+        if self.use_video and video is not None:
             features['video'] = self.video_extractor(video)
         else:
-            # 如果没有视频，创建零特征
-            B = audio.shape[0] if audio is not None else (physiological.shape[0] if physiological is not None else 1)
-            features['video'] = torch.zeros(B, self.config['model']['video']['output_dim']).to(
-                next(self.parameters()).device
+            features['video'] = self._zero_feature(
+                batch_size, self.config['model']['video']['output_dim'], device
             )
-        
-        if audio is not None:
-            features['audio'] = self.audio_extractor(audio)
-        elif audio_precomputed is not None:
+
+        if self.use_audio and audio_precomputed is not None:
             features['audio'] = self.audio_extractor(audio_precomputed)
+        elif self.use_audio and audio is not None:
+            features['audio'] = self.audio_extractor(audio)
         else:
-            B = features['video'].shape[0]
-            features['audio'] = torch.zeros(B, self.config['model']['audio']['output_dim']).to(
-                next(self.parameters()).device
+            features['audio'] = self._zero_feature(
+                batch_size, self.config['model']['audio']['output_dim'], device
             )
-        
-        if physiological is not None:
+
+        if self.use_physiological and physiological is not None:
             features['physiological'] = self.physiological_extractor(physiological)
         else:
-            B = features['video'].shape[0]
-            features['physiological'] = torch.zeros(B, self.config['model']['physiological']['output_dim']).to(
-                next(self.parameters()).device
+            features['physiological'] = self._zero_feature(
+                batch_size, self.config['model']['physiological']['output_dim'], device
             )
-        
-        if text_input_ids is not None:
+
+        if self.use_text and text_input_ids is not None:
             features['text'] = self.text_extractor(text_input_ids, text_attention_mask)
         else:
-            B = features['video'].shape[0]
-            features['text'] = torch.zeros(B, self.config['model']['text']['output_dim']).to(
-                next(self.parameters()).device
+            features['text'] = self._zero_feature(
+                batch_size, self.config['model']['text']['output_dim'], device
             )
         
         # 多模态融合（根据策略选择不同的融合方法）
@@ -218,7 +244,8 @@ class MultimodalEmotionModel(nn.Module):
                 features['audio'],
                 features['physiological'],
                 features['text'],
-                previous_emotions=previous_emotions
+                previous_emotions=previous_emotions,
+                active_mask=active_mask,
             )
         else:
             # 标准融合、领导-跟随或两阶段融合
@@ -226,17 +253,17 @@ class MultimodalEmotionModel(nn.Module):
                 features['video'],
                 features['audio'],
                 features['physiological'],
-                features['text']
+                features['text'],
+                active_mask=active_mask,
             )
             emotion_logits_shift = None
             shift_weights = None
         
-        # 输出预测
-        # 如果使用情感转变感知，可能已经预测了emotion_logits
-        if emotion_logits_shift is not None:
-            emotion_logits = emotion_logits_shift
-        else:
-            emotion_logits = self.emotion_classifier(fused_features)
+        # 输出预测：分类始终走 fused_features + emotion_classifier（避免 shift 内部 logits NaN 塌缩）
+        fused_features = torch.nan_to_num(
+            fused_features, nan=0.0, posinf=1e4, neginf=-1e4
+        )
+        emotion_logits = self.emotion_classifier(fused_features)
         
         emotion_probs = torch.softmax(emotion_logits, dim=-1)
         emotion_dimensions = self.emotion_regressor(fused_features)

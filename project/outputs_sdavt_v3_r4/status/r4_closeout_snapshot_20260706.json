@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-07-06T00:45:00",
+  "queue": {"total": 55, "done": 55, "pending": 0, "failed": 0},
+  "audit_queue_only": {"p0": 0, "collapses": 0, "dupes": 0, "tier2_fail": 1},
+  "tier2": {
+    "meld": {"pass": true, "best_f1": 0.6957, "best_acc": 0.7121, "champion": "M3_M7_combo"},
+    "mosei": {"pass": true, "best_f1": 0.6792, "champion": "F_O_ES"},
+    "crema": {
+      "pass": false,
+      "champion": "C3_C2_w2v_large",
+      "champion_acc": 0.5672,
+      "c4_c2_acc": 0.3535,
+      "c4_c2_f1": 0.3152,
+      "target_acc": 0.63,
+      "close_out": true
+    }
+  },
+  "crema_tier2_rounds": [
+    {"job": "C4_C1_combo_acc", "best_acc": 0.347, "status": "failed_nan"},
+    {"job": "C4_C2_c3_base_acc", "best_acc": 0.3535, "best_f1": 0.3152, "epochs": 60, "status": "completed_not_met"}
+  ],
+  "tensorboard": {"port": 6008, "logdir": "logs_sdavt_v3_r4", "new_run": "SDAVT_R4_C4_C2_c3_base_acc"}
+}

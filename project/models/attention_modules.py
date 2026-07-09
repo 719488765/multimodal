@@ -208,7 +208,7 @@ class MultimodalFusion(nn.Module):
         
         self.dropout = nn.Dropout(dropout)
         
-    def forward(self, video_feat, audio_feat, physiological_feat, text_feat):
+    def forward(self, video_feat, audio_feat, physiological_feat, text_feat, active_mask=None):
         """
         Args:
             video_feat: (B, T_v, hidden_dim) 或 (B, hidden_dim)
@@ -218,13 +218,39 @@ class MultimodalFusion(nn.Module):
         Returns:
             fused_features: (B, hidden_dim) - 融合后的特征
         """
-        # 确保所有特征都是2D (B, hidden_dim)
-        if len(video_feat.shape) == 3:
-            # 如果有时序维度，使用时序注意力
-            video_feat, _ = self.temporal_attention(video_feat)
-        
-        # 将所有模态特征堆叠: (B, num_modalities, hidden_dim)
-        modalities = torch.stack([video_feat, audio_feat, physiological_feat, text_feat], dim=1)
+        if active_mask is None:
+            active_mask = {
+                "video": True,
+                "audio": True,
+                "physiological": True,
+                "text": True,
+            }
+
+        modal_feats = {
+            "video": video_feat,
+            "audio": audio_feat,
+            "physiological": physiological_feat,
+            "text": text_feat,
+        }
+
+        def _pool_modal(feat):
+            if feat is None:
+                return None
+            if feat.dim() == 3:
+                return feat.mean(dim=1)
+            return feat
+
+        for name in modal_feats:
+            modal_feats[name] = _pool_modal(modal_feats[name])
+
+        active_list = [
+            modal_feats[name] for name in ("video", "audio", "physiological", "text")
+            if active_mask.get(name, True) and modal_feats[name] is not None
+        ]
+        if not active_list:
+            active_list = [modal_feats["text"]]
+
+        modalities = torch.stack(active_list, dim=1)
         B, num_modalities, hidden_dim = modalities.shape
         
         # 通过多层Transformer编码器

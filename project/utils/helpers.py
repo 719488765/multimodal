@@ -160,18 +160,39 @@ def save_checkpoint(model, optimizer, scheduler, epoch, loss, filepath, extra=No
     print(f"Checkpoint saved to {filepath}")
 
 
-def init_experiment_logging(config):
+def _write_run_meta(log_dir: str, meta: dict) -> None:
+    import json
+
+    path = os.path.join(log_dir, ".run_meta.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def _read_run_meta(log_dir: str):
+    import json
+
+    path = os.path.join(log_dir, ".run_meta.json")
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def init_experiment_logging(config, config_path: str = ""):
     """
     初始化实验日志目录与度量保存文件。
 
     功能：
     - 根据配置文件中的paths和experiment字段，创建本次实验的日志目录
     - experiment.log_run_dir + replace_log_dir: 固定目录并覆盖旧 TensorBoard/指标
+    - 固定槽位若已有 metrics 且 job_id 不一致则拒绝启动（防 F_C_ES/AVT 互相覆盖）
     - 返回：
       - log_dir: 本次实验的日志根目录（用于TensorBoard、JSON/CSV等）
       - metrics_json_path: 训练/验证度量JSON日志路径
       - metrics_csv_path: 训练/验证度量CSV日志路径
     """
+    import hashlib
     import shutil
     from pathlib import Path
 
@@ -179,6 +200,7 @@ def init_experiment_logging(config):
     exp_cfg = config.get("experiment", {})
     base_log_dir = paths_cfg.get("log_dir", "logs/")
     exp_name = exp_cfg.get("name", "experiment")
+    job_id = str(exp_cfg.get("job_id", "") or exp_name)
     reuse_name = os.environ.get("MULTIMODAL_LOG_RUN_DIR_NAME", "").strip()
     config_fixed = str(exp_cfg.get("log_run_dir", "")).strip()
     fixed_run = config_fixed or reuse_name
@@ -186,6 +208,16 @@ def init_experiment_logging(config):
 
     if fixed_run:
         log_dir = os.path.join(base_log_dir, fixed_run)
+        metrics_csv = os.path.join(log_dir, "metrics.csv")
+        if not replace and os.path.isfile(metrics_csv) and os.path.getsize(metrics_csv) > 0:
+            prev = _read_run_meta(log_dir)
+            prev_job = (prev or {}).get("job_id")
+            if prev_job and prev_job != job_id:
+                raise RuntimeError(
+                    f"Log slot conflict: {log_dir} already has metrics for job_id={prev_job!r}, "
+                    f"but current config requests job_id={job_id!r}. "
+                    f"Set experiment.replace_log_dir: true or archive the old run first."
+                )
         if replace and os.path.isdir(log_dir):
             shutil.rmtree(log_dir)
         if replace:
@@ -210,6 +242,21 @@ def init_experiment_logging(config):
              'cls_ce_unweighted', 
              'accuracy',  'precision',  'recall',  'f1']
             f.write(",".join(header) + "\n")
+    cfg_hash = ""
+    if config_path and os.path.isfile(config_path):
+        with open(config_path, "rb") as cf:
+            cfg_hash = hashlib.md5(cf.read()).hexdigest()
+    _write_run_meta(
+        log_dir,
+        {
+            "job_id": job_id,
+            "experiment_name": exp_name,
+            "log_run_dir": fixed_run or os.path.basename(log_dir),
+            "config_path": config_path,
+            "config_md5": cfg_hash,
+            "replace_log_dir": replace,
+        },
+    )
     return (
      log_dir, metrics_json_path, metrics_csv_path)
 
@@ -253,7 +300,40 @@ def append_metrics_csv(metrics_csv_path, record):
             f.write(line + "\n")
 
 
-def load_checkpoint(filepath, model, optimizer=None, scheduler=None):
+def remap_legacy_checkpoint_state_dict(
+    state_dict: dict,
+    model_state_dict: dict,
+) -> tuple[dict, list[str]]:
+    """
+    将旧版 checkpoint 键名/层级映射到当前模型结构。
+    典型场景：video feature_projection 由 Linear@0 改为 LayerNorm@0 + Linear@1。
+    返回 (remapped_state_dict, applied_rules)。
+    """
+    out = dict(state_dict)
+    rules: list[str] = []
+
+    old_w = out.get("video_extractor.feature_projection.0.weight")
+    model_ln_w = model_state_dict.get("video_extractor.feature_projection.0.weight")
+    model_lin_w = model_state_dict.get("video_extractor.feature_projection.1.weight")
+    if (
+        old_w is not None
+        and model_ln_w is not None
+        and model_lin_w is not None
+        and old_w.dim() == 2
+        and model_ln_w.dim() == 1
+        and tuple(old_w.shape) == tuple(model_lin_w.shape)
+    ):
+        for suffix in ("weight", "bias"):
+            old_key = f"video_extractor.feature_projection.0.{suffix}"
+            new_key = f"video_extractor.feature_projection.1.{suffix}"
+            if old_key in out and new_key in model_state_dict:
+                out[new_key] = out.pop(old_key)
+        rules.append("video_extractor.feature_projection: Linear@0 -> Linear@1")
+
+    return out, rules
+
+
+def load_checkpoint(filepath, model, optimizer=None, scheduler=None, strict=True):
     """
     加载模型检查点
     
@@ -284,7 +364,15 @@ def load_checkpoint(filepath, model, optimizer=None, scheduler=None):
         - 确保模型结构匹配，否则会报错
     """
     checkpoint = torch.load(filepath, map_location="cpu")
-    model.load_state_dict(checkpoint["model_state_dict"])
+    state_dict = checkpoint.get("model_state_dict", checkpoint)
+    state_dict, remap_rules = remap_legacy_checkpoint_state_dict(state_dict, model.state_dict())
+    if remap_rules:
+        print(f"Legacy checkpoint remap: {', '.join(remap_rules)}")
+    missing, unexpected = model.load_state_dict(state_dict, strict=strict)
+    if remap_rules and (missing or unexpected):
+        print(
+            f"  after remap: missing={len(missing)} unexpected={len(unexpected)}"
+        )
     if optimizer is not None:
         if "optimizer_state_dict" in checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -307,6 +395,9 @@ def load_checkpoint_partial(filepath, model, skip_prefixes=None, skip_keys=None,
     skip_keys = set(skip_keys or [])
     checkpoint = torch.load(filepath, map_location="cpu")
     state_dict = checkpoint.get("model_state_dict", {})
+    state_dict, remap_rules = remap_legacy_checkpoint_state_dict(state_dict, model.state_dict())
+    if remap_rules:
+        print(f"Legacy checkpoint remap: {', '.join(remap_rules)}")
     filtered = {}
     skipped = []
     for key, value in state_dict.items():

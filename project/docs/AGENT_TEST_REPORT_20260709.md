@@ -41,11 +41,11 @@
 | Preset | 场景 | 结果 | 备注 |
 |--------|------|------|------|
 | **sdavt_meld_v3_r4** (A) | 英文/中文 text | ✅ PASS | sad prob 0.486 / 0.508 |
-| **sdavt_meld_zh_agent** (B) | 中文 ASR 主导 | ❌ BLOCKED | checkpoint 目录不存在 |
-| **meld_only** | 对照 | ❌ FAIL | AP1 checkpoint 与当前 `MultimodalEmotionModel` 架构不兼容（video_projection shape mismatch） |
-| **ap2_m1** | 对照 | ❌ FAIL | 同上（旧 checkpoint 结构） |
+| **sdavt_meld_zh_agent** (B) | 中文 ASR 主导 | ✅ PASS（bootstrap ckpt） | sad=0.164（finetune 进行中，完成后可再测） |
+| **meld_only** | 对照 | ✅ PASS | legacy remap 后 sad=0.544 |
+| **ap2_m1** | 对照 | ✅ PASS | legacy remap 后 sad=0.535 |
 
-**结论：** 当前仅 **R4 M3_M7** preset 可与最新模型代码正确加载；切换 preset 需先对齐 checkpoint 格式或重新导出权重。
+**结论：** `remap_legacy_checkpoint_state_dict` 已修复旧 AP1/AP2 checkpoint 加载；Preset B 通过 bootstrap + 可选 finetune 启用。
 
 ---
 
@@ -70,8 +70,8 @@
 
 ## 已知问题与建议
 
-1. **Preset B 阻塞**：`SDAVT_R4_M3_M7_chinese_agent` checkpoint 未训练/未落盘 → 需运行 `finetune_m3m7_chinese_agent.sh` 后再测。
-2. **旧 preset 兼容**：`meld_only` / `ap2_m1` 与 R4 模型骨架不兼容 → 论文/demo 统一用 `sdavt_meld_v3_r4`。
+1. **中文 finetune**：`finetune_m3m7_chinese_agent.sh` 已在 tmux `m3m7_zh_finetune` 后台运行（GPU1）；完成后 checkpoint 覆盖 bootstrap 版本。
+2. **旧 preset**：`meld_only` / `ap2_m1` 已通过 `utils/helpers.py::remap_legacy_checkpoint_state_dict` 自动 remap。
 3. **text-only degraded**：无 A/V 时 `degraded_mode=true`；在线采集应启用三模态以提升 raw 置信度。
 4. **LLM**：Ollama 未启动时话术为 template 兜底；答辩前需 `start_ollama.sh`。
 5. **smoke 测试**：`test_infer_and_agent_flow` 应改用合法 base64 或 text-only payload。

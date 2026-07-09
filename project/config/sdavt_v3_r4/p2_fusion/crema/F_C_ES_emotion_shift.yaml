@@ -116,7 +116,7 @@ paths:
   log_dir: logs_sdavt_v3_r4/
   output_dir: outputs_sdavt_v3_r4/
 device: cuda
-num_workers: 4
+num_workers: 0
 pin_memory: true
 experiment:
   name: SDAVT_R4_F_C_ES

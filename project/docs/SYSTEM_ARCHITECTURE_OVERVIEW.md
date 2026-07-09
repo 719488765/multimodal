@@ -1,6 +1,19 @@
 # 多模态情感分析智能体 — 系统架构总览
 
-**版本**：2026-06-04  
+> **主文档（全栈技术架构）**：[`MASTER_SYSTEM_ARCHITECTURE_AND_EXPERIMENT_SUMMARY.md`](MASTER_SYSTEM_ARCHITECTURE_AND_EXPERIMENT_SUMMARY.md)（v2：背景→SDAVT 模型→R4 实验→Agent）
+
+**章节速查**：
+
+| 主题 | MASTER 章节 |
+|------|-------------|
+| 文献与 CFN-ESA / 骨干网络 | 第 1 章 |
+| 实验演进 AP→R4 | 第 2 章 |
+| MultimodalEmotionModel + 融合 | 第 3–5 章 |
+| 数据与 train.py | 第 6 章 |
+| R4 主结果 | 第 7–8 章 |
+| emotion-agent 前后端 | 第 9–12 章 |
+
+**版本**：2026-07-07 v2  
 **范围**：`project/`（离线训练与模型） + `emotion-agent/`（在线智能体）  
 **配套架构图**：[`figures/system_architecture_figure.html`](figures/system_architecture_figure.html)（论文/答辩用）  
 **本地查看远程 HTML**：[`VIEW_ARCHITECTURE_FIGURE.md`](VIEW_ARCHITECTURE_FIGURE.md)（端口转发 / SSH / 下载）  

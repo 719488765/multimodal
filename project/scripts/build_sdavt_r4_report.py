@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import shutil
+import sys
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +17,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LOG_DIR = PROJECT_ROOT / "logs_sdavt_v3_r4"
 QUEUE_FILE = PROJECT_ROOT / "outputs_sdavt_v3_r4" / "experiment_queue.json"
 STATUS_DIR = PROJECT_ROOT / "outputs_sdavt_v3_r4" / "status"
+AUDIT_FILE = PROJECT_ROOT / "outputs_sdavt_v3_r4" / "tables" / "r4_training_audit.json"
 DOCS_REPORT = PROJECT_ROOT / "docs" / "SDAVT_V3_R4_EXPERIMENT_RESULTS.md"
+
+DATASET_CLASSES = {"crema": 6, "mosei": 7, "meld": 7}
+COLLAPSE_F1_MAX = 0.15
+COLLAPSE_EPS = 0.025
 
 
 def _to_float(val: Any) -> Optional[float]:
@@ -87,11 +94,55 @@ def enrich_jobs(jobs: List[Dict[str, Any]]) -> None:
             job["epochs_done"] = epochs
 
 
+def _load_audit_maps() -> Tuple[Dict[str, bool], Dict[str, bool]]:
+    collapse_runs: Dict[str, bool] = {}
+    duplicate_runs: Dict[str, bool] = {}
+    if not AUDIT_FILE.is_file():
+        return collapse_runs, duplicate_runs
+    audit = json.loads(AUDIT_FILE.read_text(encoding="utf-8"))
+    for item in audit.get("collapses", []):
+        run_dir = item.get("run_dir")
+        if run_dir:
+            collapse_runs[run_dir] = True
+    for item in audit.get("duplicates", []):
+        for run_dir in item.get("runs", []):
+            duplicate_runs[run_dir] = True
+    return collapse_runs, duplicate_runs
+
+
+def _uniform_f1(num_classes: int) -> float:
+    return math.log(num_classes) / num_classes
+
+
+def collapse_flag(job: Dict[str, Any]) -> str:
+    f1 = job.get("best_val_f1")
+    run_dir = job.get("run_dir") or ""
+    ds = job.get("dataset", "")
+    num_classes = DATASET_CLASSES.get(ds, 7)
+    uniform = _uniform_f1(num_classes)
+    if f1 is None:
+        return "—"
+    if f1 <= COLLAPSE_F1_MAX or abs(f1 - uniform) <= COLLAPSE_EPS:
+        return "✗ collapse"
+    return "✓"
+
+
+def duplicate_flag(job: Dict[str, Any], duplicate_runs: Dict[str, bool]) -> str:
+    run_dir = job.get("run_dir") or ""
+    if run_dir and duplicate_runs.get(run_dir):
+        return "✗ dup"
+    return "—"
+
+
 def tier2_flag(job: Dict[str, Any]) -> str:
     f1 = job.get("best_val_f1")
     acc = job.get("best_val_acc")
     tf1 = job.get("target_f1")
     tacc = job.get("target_acc")
+    if job.get("phase") == "p4_modal":
+        cf = collapse_flag(job)
+        if cf == "✗ collapse":
+            return "✗"
     if f1 is None and acc is None:
         return "△"
     ok_f1 = tf1 is None or (f1 is not None and f1 >= float(tf1))
@@ -101,6 +152,7 @@ def tier2_flag(job: Dict[str, Any]) -> str:
 
 def render_report(queue: Dict[str, Any]) -> str:
     jobs = queue.get("jobs", [])
+    collapse_runs, duplicate_runs = _load_audit_maps()
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c = Counter(j.get("status", "?") for j in jobs)
     lines = [
@@ -121,16 +173,24 @@ def render_report(queue: Dict[str, Any]) -> str:
         phase_jobs = [j for j in jobs if j.get("phase") == phase]
         if not phase_jobs:
             continue
-        lines.extend(["", f"## {phase}", "", "| Job | Dataset | Status | Best F1@ep | Best Acc@ep | Tier-2 | Run |", "|-----|---------|--------|------------|-------------|--------|-----|"])
+        lines.extend([
+            "",
+            f"## {phase}",
+            "",
+            "| Job | Dataset | Status | Best F1@ep | Best Acc@ep | Collapse | Dup | Tier-2 | Run |",
+            "|-----|---------|--------|------------|-------------|----------|-----|--------|-----|",
+        ])
         for j in sorted(phase_jobs, key=lambda x: x.get("id", "")):
             f1 = j.get("best_val_f1")
             acc = j.get("best_val_acc")
             f1_ep = j.get("best_val_f1_ep", "—")
             f1_s = f"{f1:.4f} @ {f1_ep}" if f1 is not None else "— @ —"
             acc_s = f"{acc:.4f}" if acc is not None else "—"
+            cf = collapse_flag(j) if j.get("phase") == "p4_modal" else "—"
+            df = duplicate_flag(j, duplicate_runs)
             lines.append(
                 f"| {j['id']} | {j.get('dataset','—')} | {j.get('status','?')} | "
-                f"{f1_s} | {acc_s} | {tier2_flag(j)} | `{j.get('run_dir') or '—'}` |"
+                f"{f1_s} | {acc_s} | {cf} | {df} | {tier2_flag(j)} | `{j.get('run_dir') or '—'}` |"
             )
 
     lines.extend(["", "---", "", "*本文档由 `scripts/build_sdavt_r4_report.py` 自动生成。*", ""])
@@ -138,6 +198,16 @@ def render_report(queue: Dict[str, Any]) -> str:
 
 
 def main() -> int:
+    audit_script = PROJECT_ROOT / "scripts" / "audit_r4_training_health.py"
+    if audit_script.is_file():
+        import subprocess
+
+        subprocess.run(
+            [sys.executable, str(audit_script), "--queue-only"],
+            cwd=PROJECT_ROOT,
+            check=False,
+        )
+
     queue = json.loads(QUEUE_FILE.read_text(encoding="utf-8"))
     enrich_jobs(queue["jobs"])
     QUEUE_FILE.write_text(json.dumps(queue, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

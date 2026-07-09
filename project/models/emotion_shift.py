@@ -51,6 +51,7 @@ class EmotionShiftAwareness(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, hidden_dim)
         )
+        self.input_norm = nn.LayerNorm(hidden_dim)
         
     def forward(self, features, previous_emotions=None):
         """
@@ -71,17 +72,20 @@ class EmotionShiftAwareness(nn.Module):
                 features = features.unsqueeze(1)
 
         B, T, _ = features.shape
+        features = self.input_norm(features)
+        features = torch.nan_to_num(features, nan=0.0, posinf=1e4, neginf=-1e4)
 
         # 预测每个时间步的情感状态
         emotion_logits = self.emotion_encoder(features)  # (B, T, num_classes)
+        emotion_logits = torch.clamp(emotion_logits, -20.0, 20.0)
         emotion_probs = F.softmax(emotion_logits, dim=-1)
         
         # 计算情感转变
         if previous_emotions is not None:
             # 如果有之前的情感状态，计算转变
-            all_emotions = torch.cat([previous_emotions, emotion_probs], dim=1)  # (B, T_prev+T, num_classes)
+            all_emotions = torch.cat([previous_emotions, emotion_probs.detach()], dim=1)
         else:
-            all_emotions = emotion_probs
+            all_emotions = emotion_probs.detach()
         
         # 使用LSTM检测情感转变模式
         shift_features, _ = self.shift_detector(all_emotions)  # (B, T_prev+T, hidden_dim)
@@ -89,10 +93,15 @@ class EmotionShiftAwareness(nn.Module):
         # 只取当前时间步的转变特征
         if previous_emotions is not None:
             shift_features = shift_features[:, -T:, :]  # (B, T, hidden_dim)
+        elif shift_features.shape[1] > T:
+            shift_features = shift_features[:, -T:, :]
+        
+        shift_features = torch.nan_to_num(shift_features, nan=0.0, posinf=1e4, neginf=-1e4)
         
         # 融合原始特征和转变特征
         combined = torch.cat([features, shift_features], dim=-1)  # (B, T, hidden_dim*2)
         enhanced_features = self.shift_fusion(combined)  # (B, T, hidden_dim)
+        enhanced_features = torch.nan_to_num(enhanced_features, nan=0.0, posinf=1e4, neginf=-1e4)
         
         # 计算情感转变强度（通过相邻时间步的情感差异）
         if T > 1:
@@ -111,9 +120,19 @@ class EmotionShiftFusion(nn.Module):
     结合情感转变感知的跨模态融合模块
     扩展了CFN-ESA的思想到多模态场景
     """
-    def __init__(self, hidden_dim=512, num_emotion_classes=7, num_heads=8, dropout=0.1):
+    def __init__(
+        self,
+        hidden_dim=512,
+        num_emotion_classes=7,
+        num_heads=8,
+        dropout=0.1,
+        leader_modal="text",
+    ):
         super(EmotionShiftFusion, self).__init__()
-        
+        self.leader_modal = leader_modal
+        self._modal_names = ("video", "audio", "physiological", "text")
+        self._kv_modal_names = ("video", "audio", "physiological")
+
         # 情感转变感知模块
         self.emotion_shift = EmotionShiftAwareness(hidden_dim, num_emotion_classes, dropout)
         
@@ -131,8 +150,15 @@ class EmotionShiftFusion(nn.Module):
         self.layer_norm = nn.LayerNorm(hidden_dim)
         self.dropout = nn.Dropout(dropout)
         
-    def forward(self, video_feat, audio_feat, physiological_feat, text_feat, 
-                previous_emotions=None):
+    def forward(
+        self,
+        video_feat,
+        audio_feat,
+        physiological_feat,
+        text_feat,
+        previous_emotions=None,
+        active_mask=None,
+    ):
         """
         Args:
             video_feat: (B, hidden_dim) 或 (B, T, hidden_dim)
@@ -140,11 +166,15 @@ class EmotionShiftFusion(nn.Module):
             physiological_feat: (B, hidden_dim) 或 (B, T, hidden_dim)
             text_feat: (B, hidden_dim) 或 (B, T, hidden_dim) - 主要模态
             previous_emotions: (B, T_prev, num_classes) - 之前的情感状态
+            active_mask: dict[str, bool] - 激活模态（消融实验）
         Returns:
             fused_features: (B, hidden_dim) 或 (B, T, hidden_dim)
             emotion_logits: (B, num_classes) 或 (B, T, num_classes)
             shift_weights: (B,) 或 (B, T)
         """
+        if active_mask is None:
+            active_mask = {name: True for name in self._modal_names}
+
         def _pool_time(feat):
             if feat is None:
                 return None
@@ -152,44 +182,78 @@ class EmotionShiftFusion(nn.Module):
                 return feat.mean(dim=1)
             return feat
 
-        video_feat = _pool_time(video_feat)
-        audio_feat = _pool_time(audio_feat)
-        physiological_feat = _pool_time(physiological_feat)
-        text_feat = _pool_time(text_feat)
+        modal_feats = {
+            "video": _pool_time(video_feat),
+            "audio": _pool_time(audio_feat),
+            "physiological": _pool_time(physiological_feat),
+            "text": _pool_time(text_feat),
+        }
 
         # 统一维度处理（clip 级分类：(B, hidden_dim) -> (B, 1, hidden_dim)）
         is_temporal = False
-        video_feat = video_feat.unsqueeze(1)
-        audio_feat = audio_feat.unsqueeze(1)
-        physiological_feat = physiological_feat.unsqueeze(1)
-        text_feat = text_feat.unsqueeze(1)
-        weighted_feat = (
-            self.modal_weights[0] * video_feat +
-            self.modal_weights[1] * audio_feat +
-            self.modal_weights[2] * physiological_feat +
-            self.modal_weights[3] * text_feat
-        )
-        
+        for name in self._modal_names:
+            feat = modal_feats[name]
+            if feat is not None:
+                modal_feats[name] = feat.unsqueeze(1)
+
+        weights = F.softmax(self.modal_weights, dim=0)
+        weighted_parts = []
+        weight_sum = torch.tensor(0.0, device=weights.device, dtype=weights.dtype)
+        for idx, name in enumerate(self._modal_names):
+            if not active_mask.get(name, True):
+                continue
+            feat = modal_feats[name]
+            if feat is None:
+                continue
+            w = weights[idx]
+            weighted_parts.append(w * feat)
+            weight_sum = weight_sum + w
+
+        if weighted_parts:
+            weighted_feat = sum(weighted_parts) / weight_sum.clamp(min=1e-8)
+        else:
+            weighted_feat = None
+            for name in self._modal_names:
+                if modal_feats.get(name) is not None:
+                    weighted_feat = modal_feats[name]
+                    break
+            if weighted_feat is None:
+                raise ValueError("No active modalities for EmotionShiftFusion")
+
         # 应用情感转变感知
         enhanced_feat, emotion_logits, shift_weights = self.emotion_shift(
             weighted_feat, previous_emotions
         )
-        
-        # 跨模态注意力（以文本为query，其他模态为key和value）
-        other_modals = torch.stack([video_feat, audio_feat, physiological_feat], dim=2)  # (B, T, 3, hidden_dim)
-        other_modals = other_modals.view(-1, 3, enhanced_feat.shape[-1])  # (B*T, 3, hidden_dim)
-        text_query = enhanced_feat.view(-1, 1, enhanced_feat.shape[-1])  # (B*T, 1, hidden_dim)
-        
-        attended_feat, _ = self.cross_attention(
-            query=text_query,
-            key=other_modals,
-            value=other_modals
-        )  # (B*T, 1, hidden_dim)
-        
-        attended_feat = attended_feat.view(enhanced_feat.shape)  # (B, T, hidden_dim)
-        
-        # 残差连接和层归一化
-        output = self.layer_norm(enhanced_feat + attended_feat)
+
+        leader = self.leader_modal
+        if not active_mask.get(leader, True):
+            for name in self._modal_names:
+                if active_mask.get(name, True) and modal_feats[name] is not None:
+                    leader = name
+                    break
+        query_feat = modal_feats.get(leader)
+        if query_feat is None:
+            query_feat = enhanced_feat
+        text_query = query_feat.view(-1, 1, query_feat.shape[-1])
+
+        kv_list = []
+        for name in self._kv_modal_names:
+            if active_mask.get(name, True) and modal_feats.get(name) is not None:
+                kv_list.append(modal_feats[name])
+
+        if kv_list:
+            other_modals = torch.stack(kv_list, dim=2)
+            other_modals = other_modals.view(-1, len(kv_list), enhanced_feat.shape[-1])
+            attended_feat, _ = self.cross_attention(
+                query=text_query,
+                key=other_modals,
+                value=other_modals,
+            )
+            attended_feat = attended_feat.view(enhanced_feat.shape)
+            output = self.layer_norm(enhanced_feat + attended_feat)
+        else:
+            output = self.layer_norm(enhanced_feat)
+
         output = self.dropout(output)
         
         if not is_temporal:
