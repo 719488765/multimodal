@@ -299,6 +299,21 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ---
 
+## 14. 系统化测试（2026-07-09，R4 close-out 后）
+
+R4 GPU 实验线关闭后，Agent 测试成为主轨。完整 Phase 0–3 结果见 **[`AGENT_TEST_REPORT_20260709.md`](AGENT_TEST_REPORT_20260709.md)**。
+
+| Phase | 内容 | 关键命令 |
+|-------|------|----------|
+| 0 | 基线 | `backend/scripts/verify_trained_model.sh`；`curl /api/v1/health` |
+| 1 | 离线 | `pytest tests/test_emotion_arbitration.py`；`eval_zh_agent_benchmark.py` |
+| 2 | Preset | 默认 `sdavt_meld_v3_r4`；metadata `checkpoint_preset` 切换 |
+| 3 | E2E | `start_full_stack.sh` 或 backend+ASR；`infer-upload` + `pipeline_trace` |
+
+默认 preset 已更新为 **sdavt_meld_v3_r4**（M3_M7 F1=0.696），见 [`config_agent_deploy.yaml`](../config/config_agent_deploy.yaml) 与 `apply_deploy_preset.sh`。
+
+---
+
 ## 13. 结论（可直接用于论文措辞）
 
 你的总体设想是合理且工程上可落地的：当前项目已经具备高质量多模态情感识别基础；**真实 checkpoint 推理已接入 emotion-agent**。后续可继续优化在线延迟、ASR 质量与组合实验（AP2 配方 + AP4 DA）。采用“离线训练稳定 + 在线推理闭环 + LLM 双路线”的方案，既能与既有实验完全兼容，也能在软件工程专硕答辩中体现完整系统能力、实验可复现性和工程取舍思维。
