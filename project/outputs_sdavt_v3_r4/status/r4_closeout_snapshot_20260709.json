@@ -1,0 +1,73 @@
+{
+  "generated_at": "2026-07-09T19:55:21+08:00",
+  "mode": "parallel_gpu0_meld_v_gpu1_c4c3",
+  "queue": {
+    "total": 55,
+    "done": 55,
+    "pending": 0,
+    "failed": 0,
+    "R4_A_M_V_marked_done": true
+  },
+  "audit_queue_only": {
+    "p0": 0,
+    "collapses": 0,
+    "dupes": 0,
+    "tier2_fail": 1
+  },
+  "tier2": {
+    "meld": {
+      "pass": true,
+      "best_f1": 0.6957,
+      "best_acc": 0.7121,
+      "champion": "M3_M7_combo",
+      "target_f1": 0.59
+    },
+    "mosei": {
+      "pass": true,
+      "best_f1": 0.6792,
+      "champion": "F_O_ES",
+      "target_f1": 0.67
+    },
+    "crema": {
+      "pass": false,
+      "close_out": true,
+      "champion": "C4_C3_c3_warmstart_acc",
+      "champion_acc": 0.604839,
+      "champion_f1": 0.605655,
+      "champion_epoch": 65,
+      "baseline_c3_c2_acc": 0.5672,
+      "target_acc": 0.63,
+      "gap_pp": 2.5
+    }
+  },
+  "parallel_retrain": {
+    "C4_C3": {
+      "completed_at": "2026-07-09T06:32:00+08:00",
+      "run_dir": "SDAVT_R4_C4_C3_c3_warmstart_acc",
+      "best_acc": 0.604839,
+      "best_f1": 0.605655,
+      "best_epoch": 65,
+      "last_epoch": 79,
+      "verdict": "PARTIAL"
+    },
+    "R4_A_M_V": {
+      "completed_at": "2026-07-09T07:55:00+08:00",
+      "run_dir": "SDAVT_R4_R4_A_M_V",
+      "best_f1": 0.268985,
+      "best_f1_epoch": 9,
+      "ep0_f1": 0.25177,
+      "best_acc": 0.423285,
+      "last_epoch": 24,
+      "validate_pass": false,
+      "verdict": "FAIL"
+    }
+  },
+  "crema_tier2_rounds": [
+    {"job": "C4_C1_combo_acc", "best_acc": 0.347, "status": "failed_nan"},
+    {"job": "C4_C2_c3_base_acc", "best_acc": 0.3535, "best_f1": 0.3152, "status": "completed_not_met"},
+    {"job": "C4_C3_c3_warmstart_acc", "best_acc": 0.604839, "best_f1": 0.605655, "epochs": 79, "status": "PARTIAL"}
+  ],
+  "no_more_gpu_retrain": true,
+  "next_phase": "agent_optimization",
+  "tensorboard": {"port": 6008, "logdir": "logs_sdavt_v3_r4"}
+}

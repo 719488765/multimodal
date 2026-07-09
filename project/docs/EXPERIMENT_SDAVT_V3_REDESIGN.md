@@ -282,7 +282,7 @@ python3 scripts/monitor_sdavt_r4.py --once
 | 数据集 | 目标 | **当前最优** | 判定 |
 |--------|------|-------------|------|
 | MELD | F1≥0.59, Acc≥0.62 | **F1=0.696, Acc=0.712**（M3_M7_combo） | **PASS** |
-| CREMA | Acc≥0.63 | Acc=0.567（C3_C2_w2v_large） | **FAIL** |
+| CREMA | Acc≥0.63 | Acc=**0.605**（C4_C3_c3_warmstart @ ep65） | **CLOSE-OUT**（超 C3_C2 0.567，未达 0.63） |
 | MOSEI | F1≥0.67 | F1=0.679（F_O_ES） | PASS |
 
 门禁文件：
@@ -304,13 +304,43 @@ checkpoint: checkpoints_sdavt_v3_r4/SDAVT_R4_M3_M7_combo/checkpoint_pretrain_bes
 bash scripts/apply_deploy_preset.sh sdavt_meld_v3_r4
 ```
 
-### 18.3 下一步（2026-06-30）
+### 18.3 执行进度（2026-07-09 close-out）
 
-1. **P4 CREMA 7 jobs 重跑**（配置已修复，worker 已重启）
-2. **P4 MOSEI 剩余 3 jobs**（R4_A_O_T / V / VT）自动接续
-3. **F_C_ES anti-overfit 重训**（P4 完成后，`bash scripts/retrain_r4_crema_p2_es.sh`）恢复 P2 冠军 ckpt
-4. **刷新论文记录**：`bash scripts/start_sdavt_r4.sh report`
-5. **P5**：更新 Agent preset 为 M3_M7_combo；撰写 Table 4 模态消融分析
+| Plan 阶段 | 范围 | 状态 | 关键指标 |
+|-----------|------|------|----------|
+| 0–6 | R4 主轨 + 审计修复 | **完成** | 55/55 done；audit **P0=0** |
+| 7 CREMA P3-C+ | C4_C1/C4_C2 | CLOSE-OUT | 均未超 C3_C2 |
+| **8 C4_C3** | warm-start | **完成 PARTIAL** | Acc=**0.605** @ ep65（C3_C2=0.567） |
+| **9 MELD V** | R4_A_M_V 重训 | **完成 FAIL** | F1=**0.269** @ ep9；validate 未达标 |
+| Agent 整合 | M3_M7 默认 | **完成** | `sdavt_meld_v3_r4` + 前端切换 |
+
+快照：`outputs_sdavt_v3_r4/status/r4_parallel_retrain_final_latest.json`
+
+### 18.4 并行重训结果（2026-07-09）
+
+| Job | 完成时间 | Best 指标 | 验收 | 判定 |
+|-----|----------|-----------|------|------|
+| **C4_C3** | 2026-07-09 06:32 | Acc **0.605**, F1 **0.606** @ ep65 | Acc≥0.63 或 >0.567 | **PARTIAL**（+3.8pp，未达 0.63） |
+| **R4_A_M_V** | 2026-07-09 07:55 | F1 **0.269** @ ep9；ep0=0.252 | ep0>0.35, best>0.45 | **FAIL**（early-stop @ ep24） |
+
+**Tier-2 最终（论文口径）：**
+
+| 数据集 | 目标 | Champion | 状态 |
+|--------|------|----------|------|
+| MELD | F1≥0.59 | **M3_M7** F1=0.696 | PASS |
+| MOSEI | F1≥0.67 | **F_O_ES** F1=0.679 | PASS |
+| CREMA | Acc≥0.63 | **C4_C3** Acc=**0.605** | **CLOSE-OUT**（差 2.5pp） |
+
+**不重训结论：**
+- **MELD V**：视频单模态任务固有难度（R4_A_M_T F1=0.674 vs V≈0.27）；Table 4 脚注，不阻塞 Agent
+- **CREMA 第 4 轮**：C4_C3 已显著超 C3_C2；再训 ROI 低，论文固定 C4_C3 Acc=0.605
+
+### 18.5 R4 Close-out 与下一步
+
+1. **R4 GPU 实验线正式关闭** — 无计划内待重训 job
+2. **论文主表**：MELD M3_M7；MOSEI F_O_ES；CREMA C4_C3 Acc=0.605
+3. **Agent 主轨**：Phase 0–3 测试与后处理调优（见 [`R4_CLOSEOUT_20260709.md`](R4_CLOSEOUT_20260709.md)、[`AGENT_TEST_REPORT_20260709.md`](AGENT_TEST_REPORT_20260709.md)）
+4. **文档**：[`MASTER_SYSTEM_ARCHITECTURE_AND_EXPERIMENT_SUMMARY.md`](MASTER_SYSTEM_ARCHITECTURE_AND_EXPERIMENT_SUMMARY.md)
 
 ---
 
@@ -325,6 +355,7 @@ bash scripts/apply_deploy_preset.sh sdavt_meld_v3_r4
 | 2026-06-25 | v3.8 | P2.5 PASS；P3 启动 |
 | 2026-06-28 | v3.9–v3.10 | P3 完成；P4 MELD；tokenizer 修复 |
 | 2026-06-30 | **v3.11** | **文档从 transcript 恢复**；P3 冠军更新为 M3_M7_combo；CREMA P4 log 槽位 bug 修复；P4 CREMA 重跑 |
+| 2026-07-09 | **v3.12** | **R4 close-out**：C4_C3 Acc=0.605；MELD V 重训 FAIL；Agent 测试主轨 |
 
 ---
 
