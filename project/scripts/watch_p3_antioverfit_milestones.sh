@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Monitor M3_M1 / M3_M7 anti-overfit retrain: ep3 peak + ep8 unfreeze stability
+# DISABLED BY DEFAULT — opt-in: ENABLE_R4_WATCH=1 bash scripts/watch_p3_antioverfit_milestones.sh
 set -euo pipefail
+
+if [[ "${ENABLE_R4_WATCH:-0}" != "1" ]]; then
+  echo "[watch_p3_antioverfit] DISABLED (default). Set ENABLE_R4_WATCH=1 to run."
+  exit 0
+fi
 
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$PROJECT_DIR"

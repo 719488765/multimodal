@@ -1,0 +1,148 @@
+# M3_M7 中文 Agent v2：从 v1 finetune ckpt 二阶段微调
+# 数据：MELD + agent_capture（经 inject_agent_capture_into_meld.py 注入 train 目录）
+# 文本：MELD 英文 + zh 增强（inject_meld_zh_text_augment.py 生成 *_zh.txt）
+
+model:
+  modalities:
+    use_video: true
+    use_audio: true
+    use_physiological: false
+    use_text: true
+  video:
+    backbone: resnet50
+    pretrained: true
+    feature_dim: 713
+    output_dim: 512
+    input_type: auto
+  audio:
+    backbone: facebook/wav2vec2-large-960h
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+  physiological:
+    input_dim: 64
+    hidden_dim: 256
+    num_layers: 2
+    output_dim: 512
+    use_lstm: true
+  text:
+    backbone: bert-base-chinese
+    pretrained: true
+    feature_dim: 768
+    output_dim: 512
+    unfreeze_encoder_layers: 2
+  attention:
+    num_heads: 8
+    hidden_dim: 512
+    num_layers: 3
+    dropout: 0.35
+    fusion_strategy: emotion_shift
+    leader_modal: audio
+    num_gat_layers: 2
+    use_fmc_loss: false
+    use_context_window: true
+    modality_dropout: 0.1
+  output:
+    emotion_classes: 7
+    emotion_dimensions: 2
+    use_trend_prediction: false
+  domain_adaptation:
+    enabled: false
+  dataset_normalization:
+    enabled: false
+training:
+  batch_size: 1
+  gradient_accumulation_steps: 2
+  seed: 3407
+  num_epochs: 12
+  learning_rate: 0.00005
+  weight_decay: 0.01
+  warmup_steps: 500
+  gradient_clip: 1.0
+  optimizer: adamw
+  scheduler: cosine
+  freeze_backbone_epochs: 2
+  backbone_lr_multiplier: 0.01
+  save_every_n_epochs: 0
+  early_stopping:
+    enabled: true
+    monitor: val_f1
+    patience: 5
+    min_delta: 0.002
+  loss_weights:
+    classification: 1.0
+    regression: 0.0
+    trend: 0.0
+  sampling:
+    enabled: true
+    mode: uniform
+    shuffle: true
+  loss:
+    use_class_balanced: false
+    use_focal_loss: true
+    focal_gamma: 2.0
+    label_smoothing: 0.10
+  pretrain:
+    enabled: false
+    datasets: []
+    epochs: 0
+  finetune:
+    enabled: true
+    datasets:
+    - meld
+    epochs: 12
+    freeze_backbone: false
+datasets:
+  crema:
+    emotion_classes: 6
+    use_native_labels: false
+    video_format: .flv
+  meld:
+    emotion_classes: 7
+    use_native_labels: true
+    video_format: .mp4
+    has_text: true
+    zh_text_suffix: _zh.txt
+    zh_text_mix_prob: 0.5
+  mosei:
+    emotion_classes: 7
+    use_native_labels: false
+    video_format: .npy
+data:
+  root_dir: data/
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  video:
+    fps: 30
+    frame_size: 112
+    num_frames: 4
+  audio:
+    sample_rate: 16000
+    duration: 3.0
+  context_window: 3
+  zh_text_manifest: data/agent_benchmark/meld_zh_asr_manifest.json
+paths:
+  checkpoint_dir: checkpoints_sdavt_v3_r4/
+  log_dir: logs_sdavt_v3_r4/
+  output_dir: outputs_sdavt_v3_r4/
+device: cuda
+num_workers: 0
+pin_memory: true
+experiment:
+  name: SDAVT_R4_M3_M7_chinese_agent_v2
+  project: sdavt_v3_r4
+  series: sdavt_v3_r4_p3_m3_zh_v2
+  use_tensorboard: true
+  data_revision: zh_agent_capture_v2
+  arch_revision: fusion_classifier_20260629_combo_antioverfit
+  paper_track: true
+  deprecated_log_roots:
+  - logs_sdavt_v3
+  - logs_sdavt_v3_archived
+  - logs_accuracy_seq
+  - logs_rerun
+  phase: p3_m3
+  job_id: M3_M7_chinese_agent_v2
+  log_run_dir: SDAVT_R4_M3_M7_chinese_agent_v2
+  replace_log_dir: false

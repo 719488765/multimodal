@@ -131,6 +131,20 @@ body {
   font-size: 14px;
 }
 
+.model-switcher-select:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.model-switcher-auto {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #334155;
+}
+
 .model-switcher-hint {
   margin: 8px 0 0;
   font-size: 12px;

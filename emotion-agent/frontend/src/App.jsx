@@ -13,9 +13,43 @@ import {
   isCursorTunnelMode,
   isServerDeployMode,
   MAX_SAFE_UPLOAD_CHUNKS,
+  preloadModelPreset,
   respondAgent,
   TUNNEL_MAX_MULTIPART_BYTES,
 } from "./api";
+
+const LS_PRESET = "ea_checkpoint_preset";
+const LS_AUTO_PRESET = "ea_auto_preset";
+const DEFAULT_PRESET = "sdavt_meld_zh_agent_v2";
+
+function readStoredPreset() {
+  try {
+    return localStorage.getItem(LS_PRESET) || "";
+  } catch {
+    return "";
+  }
+}
+
+function readStoredAutoPreset() {
+  try {
+    const v = localStorage.getItem(LS_AUTO_PRESET);
+    if (v === null) return true;
+    return v === "1" || v === "true";
+  } catch {
+    return true;
+  }
+}
+
+function formatPresetOptionLabel(opt) {
+  if (opt.display_label) return opt.display_label;
+  const p = opt.priority != null ? `[P${opt.priority}] ` : "";
+  const metrics = [];
+  if (opt.best_f1 != null) metrics.push(`F1=${Number(opt.best_f1).toFixed(3)}`);
+  if (opt.best_acc != null) metrics.push(`Acc=${Number(opt.best_acc).toFixed(3)}`);
+  const m = metrics.length ? `｜${metrics.join(" / ")}` : "";
+  const tag = opt.experimental ? " [实验]" : opt.recommended ? " [推荐]" : "";
+  return `${p}${opt.label || opt.id}${m}${tag}`;
+}
 
 function randomSessionId() {
   return `sess_${Math.random().toString(36).slice(2, 10)}`;
@@ -46,6 +80,30 @@ async function dataUrlToBlob(dataUrl) {
   return res.blob();
 }
 
+/** 均匀下采样帧序列，保证覆盖「表情峰值→恢复」全过程，而不是只留末尾几帧 */
+function downsampleFramesUniform(frames, maxKeep) {
+  if (!Array.isArray(frames) || frames.length <= maxKeep) {
+    return [...(frames || [])];
+  }
+  const out = [];
+  const n = frames.length;
+  for (let i = 0; i < maxKeep; i += 1) {
+    const idx = Math.round((i * (n - 1)) / (maxKeep - 1));
+    out.push(frames[idx]);
+  }
+  return out;
+}
+
+function pushCaptureFrame(bufferRef, b64, maxKeep) {
+  if (!b64) return;
+  const arr = bufferRef.current;
+  if (arr.length && arr[arr.length - 1] === b64) return;
+  arr.push(b64);
+  if (arr.length > maxKeep) {
+    bufferRef.current = downsampleFramesUniform(arr, maxKeep);
+  }
+}
+
 function trimAudioSamples(samples, sampleRate, maxSec = getCaptureMaxSec(), fromEnd = false) {
   const maxLen = Math.floor(sampleRate * maxSec);
   if (samples.length <= maxLen) return samples;
@@ -61,7 +119,8 @@ function EmotionTimeline({ windows, summary }) {
       <h4>情绪时间线（每 3 秒一窗）</h4>
       {summary ? (
         <p className="hint">
-          共 {summary.num_windows} 窗 · {summary.total_duration_sec}s · 聚合：近端加权 ·
+          共 {summary.num_windows} 窗 · {summary.total_duration_sec}s · 聚合：
+          {summary.aggregation === "peak_non_neutral" ? "非中性峰值" : summary.aggregation || "峰值"} ·
           {summary.emotion_shift_detected ? " 检测到情绪变化" : " 情绪较稳定"}
         </p>
       ) : null}
@@ -297,8 +356,13 @@ export default function App() {
   const videoMimeRef = useRef("video/webm");
   const frameSnapshotsRef = useRef([]);
   const frameIntervalRef = useRef(null);
-  const [checkpointPreset, setCheckpointPreset] = useState("sdavt_meld_v3_r4");
+  const [checkpointPreset, setCheckpointPreset] = useState(
+    () => readStoredPreset() || DEFAULT_PRESET,
+  );
+  const [autoPreset, setAutoPreset] = useState(() => readStoredAutoPreset());
   const [modelStatus, setModelStatus] = useState(null);
+  const [preloadHint, setPreloadHint] = useState("");
+  const presetSyncedRef = useRef(Boolean(readStoredPreset()));
 
   const shortEvents = useMemo(() => events.slice(-10).reverse(), [events]);
   const statusText =
@@ -445,8 +509,9 @@ export default function App() {
           preset: health?.model?.preset,
         });
         const preset = health?.model?.preset || health?.model?.checkpoint_preset;
-        if (preset) {
+        if (preset && !presetSyncedRef.current && !readStoredPreset()) {
           setCheckpointPreset(preset);
+          presetSyncedRef.current = true;
         }
         setError(msgs.join(" | "));
       } catch (e) {
@@ -466,7 +531,13 @@ export default function App() {
     (async () => {
       try {
         const status = await fetchModelStatus();
-        if (!cancelled) setModelStatus(status);
+        if (cancelled) return;
+        setModelStatus(status);
+        const envPreset = status?.checkpoint_preset_env;
+        if (envPreset && !presetSyncedRef.current && !readStoredPreset()) {
+          setCheckpointPreset(envPreset);
+          presetSyncedRef.current = true;
+        }
       } catch {
         if (!cancelled) setModelStatus(null);
       }
@@ -476,27 +547,126 @@ export default function App() {
     };
   }, [apiReady]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_PRESET, checkpointPreset);
+      localStorage.setItem(LS_AUTO_PRESET, autoPreset ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [checkpointPreset, autoPreset]);
+
   const presetOptions = useMemo(() => {
     const fromApi = modelStatus?.available_presets;
     if (Array.isArray(fromApi) && fromApi.length > 0) {
       return fromApi;
     }
     return [
-      { id: "sdavt_meld_v3_r4", label: "sdavt_meld_v3_r4（R4 冠军 M3_M7 F1=0.696，推荐）", recommended: true },
-      { id: "sdavt_meld_zh_agent", label: "sdavt_meld_zh_agent（中文 BERT + leader_audio）", recommended: true },
-      { id: "meld_only", label: "meld_only（MELD 单域，对照）" },
-      { id: "ap2_m1", label: "ap2_m1（三混合 F1≈0.56）" },
-      { id: "agent_chinese", label: "agent_chinese（中文 BERT 微调）" },
-      { id: "mosei_only", label: "mosei_only（MOSEI 单域，实验）", experimental: true },
-      { id: "ap4_w005", label: "ap4_w005（DA 预训练）" },
+      {
+        id: "sdavt_meld_zh_agent_v2",
+        label: "中文 Agent v2（AVT）",
+        display_label: "[P0] 中文 Agent v2（AVT）｜F1=0.611 / Acc=0.636 [推荐]",
+        priority: 0,
+        group: "recommended",
+        group_label: "推荐部署",
+        recommended: true,
+        best_f1: 0.6114,
+        best_acc: 0.6363,
+      },
+      {
+        id: "sdavt_meld_v3_r4",
+        label: "英文 MELD 冠军 M3_M7（AVT）",
+        display_label: "[P1] 英文 MELD 冠军 M3_M7（AVT）｜F1=0.696 / Acc=0.712 [推荐]",
+        priority: 1,
+        group: "recommended",
+        group_label: "推荐部署",
+        recommended: true,
+        best_f1: 0.6957,
+        best_acc: 0.7121,
+      },
+      {
+        id: "sdavt_meld_zh_agent",
+        label: "中文 Agent v1（AVT）",
+        priority: 2,
+        group: "chinese",
+        group_label: "中文对照",
+        best_f1: 0.601,
+        best_acc: 0.6273,
+      },
+      {
+        id: "sdavt_mosei_r4",
+        label: "MOSEI F_O_ES（AVT）",
+        priority: 3,
+        group: "experimental",
+        group_label: "实验",
+        experimental: true,
+        best_f1: 0.6792,
+        best_acc: 0.7269,
+      },
+      {
+        id: "sdavt_crema_r4",
+        label: "CREMA Warmstart C4_C3（AVT）",
+        priority: 4,
+        group: "experimental",
+        group_label: "实验",
+        experimental: true,
+        best_f1: 0.6057,
+        best_acc: 0.6048,
+      },
+      {
+        id: "ap2_m1",
+        label: "三混合 AP2-M1（AVT）",
+        priority: 5,
+        group: "legacy",
+        group_label: "历史",
+        best_f1: 0.56,
+        best_acc: 0.61,
+      },
     ];
   }, [modelStatus]);
+
+  const presetGroups = useMemo(() => {
+    const order = ["recommended", "chinese", "experimental", "legacy", "other"];
+    const map = new Map();
+    for (const opt of presetOptions) {
+      const g = opt.group || "other";
+      if (!map.has(g)) {
+        map.set(g, { id: g, label: opt.group_label || g, items: [] });
+      }
+      map.get(g).items.push(opt);
+    }
+    return order.filter((k) => map.has(k)).map((k) => map.get(k));
+  }, [presetOptions]);
 
   const loadedPresetId =
     modelStatus?.model?.preset ||
     modelStatus?.model?.checkpoint_preset ||
     modelStatus?.checkpoint_preset_env ||
     checkpointPreset;
+
+  const loadedPresets = modelStatus?.model?.loaded_presets || [];
+
+  async function handlePresetChange(nextId) {
+    setCheckpointPreset(nextId);
+    setAutoPreset(false);
+    if (loadedPresets.includes(nextId)) {
+      setPreloadHint(`已缓存：${nextId}`);
+      return;
+    }
+    setPreloadHint(`正在预热 ${nextId}（首次可能需数十秒）…`);
+    try {
+      const res = await preloadModelPreset(nextId);
+      setPreloadHint(
+        res?.already_cached
+          ? `已缓存：${nextId}`
+          : `预热完成：${nextId}`,
+      );
+      const status = await fetchModelStatus();
+      setModelStatus(status);
+    } catch (e) {
+      setPreloadHint(`预热失败（下次推理时加载）：${e.message || e}`);
+    }
+  }
 
   async function ensureCaptureDevice() {
     if (mediaStreamRef.current) {
@@ -582,12 +752,11 @@ export default function App() {
     });
   }
 
-  function snapshotFrame() {
+  function snapshotFrame(quality = 0.8, maxW = 160) {
     const videoEl = videoRef.current;
     if (!videoEl || videoEl.videoWidth === 0 || videoEl.videoHeight === 0) {
       return "";
     }
-    const maxW = 160;
     let w = videoEl.videoWidth;
     let h = videoEl.videoHeight;
     if (w > maxW) {
@@ -602,7 +771,7 @@ export default function App() {
       return "";
     }
     ctx.drawImage(videoEl, 0, 0, w, h);
-    return canvas.toDataURL("image/jpeg", 0.8);
+    return canvas.toDataURL("image/jpeg", quality);
   }
 
   function blobToBase64(blob) {
@@ -759,16 +928,17 @@ export default function App() {
       if (frameIntervalRef.current) {
         clearInterval(frameIntervalRef.current);
       }
+      // 隧道 6s → 约 12 帧；服务器 30s → 均匀保留最多 24 帧，覆盖峰值→恢复全过程
+      const tunnelLike = isCursorTunnelMode() || isCloudflareQuickTunnel();
+      const frameIntervalMs = tunnelLike ? 400 : 500;
+      const maxFrames = tunnelLike ? 12 : 24;
       frameIntervalRef.current = setInterval(() => {
-        const url = snapshotFrame();
+        const q = tunnelLike ? 0.42 : 0.75;
+        const maxW = tunnelLike ? 96 : 144;
+        const url = snapshotFrame(q, maxW);
         if (!url) return;
-        const b64 = stripDataUrl(url);
-        const arr = frameSnapshotsRef.current;
-        if (arr.length >= 4) {
-          arr.shift();
-        }
-        arr.push(b64);
-      }, 750);
+        pushCaptureFrame(frameSnapshotsRef, stripDataUrl(url), maxFrames);
+      }, frameIntervalMs);
     } catch (e) {
       setError(`开始采集失败: ${e.message}`);
     }
@@ -877,14 +1047,14 @@ export default function App() {
     stopFrameSampling();
     setStatus("running");
     try {
-      const imageDataUrl = snapshotFrame();
+      const tunnelSnap = isCursorTunnelMode() || isCloudflareQuickTunnel();
+      const imageDataUrl = snapshotFrame(tunnelSnap ? 0.42 : 0.75, tunnelSnap ? 96 : 144);
       if (imageDataUrl) {
-        const b64 = stripDataUrl(imageDataUrl);
-        const arr = frameSnapshotsRef.current;
-        if (!arr.length || arr[arr.length - 1] !== b64) {
-          if (arr.length >= 4) arr.shift();
-          arr.push(b64);
-        }
+        pushCaptureFrame(
+          frameSnapshotsRef,
+          stripDataUrl(imageDataUrl),
+          tunnelSnap ? 12 : 24,
+        );
       }
       setCapturedImage(imageDataUrl);
       if (!imageDataUrl) {
@@ -962,31 +1132,41 @@ export default function App() {
           return;
         }
         if (rms < 0.002 && peak < 0.02) {
-          setStatus("error");
-          const reason = "检测到音频接近静音，请检查麦克风权限/设备占用后重试。";
-          setError(reason);
-          setCaptureAbortReason(reason);
-          setMicLevel(0);
-          setAudioInfo({
-            mimeType: "audio/wav",
-            bytes: 0,
-            chunks: pcmRef.current.length,
-            sampleRate: 16000,
-            durationSec: Number(durationSec.toFixed(2)),
-            rms: Number(rms.toFixed(5)),
-            peak: Number(peak.toFixed(5)),
-          });
-          setDebugInfo({
-            phase: "audio_guard",
-            reason,
-            session_id: sessionId,
-            duration_sec: Number(durationSec.toFixed(2)),
-            rms: Number(rms.toFixed(5)),
-            peak: Number(peak.toFixed(5)),
-            capture_ready: captureEnabled,
-            ws_connected: wsConnected,
-          });
-          return;
+          // 纯表情实验：无声但有视频帧时允许继续（后端用视频小 clip + 峰值聚合）
+          const hasVisual =
+            (frameSnapshotsRef.current && frameSnapshotsRef.current.length >= 2) ||
+            Boolean(videoRecorderRef.current);
+          if (!hasVisual) {
+            setStatus("error");
+            const reason = "检测到音频接近静音，请检查麦克风权限/设备占用后重试。";
+            setError(reason);
+            setCaptureAbortReason(reason);
+            setMicLevel(0);
+            setAudioInfo({
+              mimeType: "audio/wav",
+              bytes: 0,
+              chunks: pcmRef.current.length,
+              sampleRate: 16000,
+              durationSec: Number(durationSec.toFixed(2)),
+              rms: Number(rms.toFixed(5)),
+              peak: Number(peak.toFixed(5)),
+            });
+            setDebugInfo({
+              phase: "audio_guard",
+              reason,
+              session_id: sessionId,
+              duration_sec: Number(durationSec.toFixed(2)),
+              rms: Number(rms.toFixed(5)),
+              peak: Number(peak.toFixed(5)),
+              capture_ready: captureEnabled,
+              ws_connected: wsConnected,
+            });
+            return;
+          }
+          appendRuntimeLog(
+            "warn",
+            "音频接近静音，但已采集到视频帧：按纯表情/视觉小 clip 继续推理",
+          );
         }
         wavBlob = encodeWav(resampled, 16000);
         currentAudioInfo = {
@@ -1028,11 +1208,24 @@ export default function App() {
       const tunnelMode = isCursorTunnelMode();
       const serverMode = isServerDeployMode();
       const uploadProfile = getUploadProfile();
-      const MAX_VIDEO_BYTES = serverMode ? 3000000 : 96000;
+      const tunnelLike = tunnelMode || isCloudflareQuickTunnel();
+      // 隧道优先保留小 webm clip；装不下再退回「全程多帧 JPEG 序列」而非单张末帧
+      const MAX_VIDEO_BYTES = serverMode ? 3000000 : tunnelLike ? 180000 : 96000;
       const videoChunkCount = videoBlob ? estimateUploadChunks(videoBlob.size) : 0;
-      const totalUploadBytes = (wavBlob?.size || 0) + (videoBlob?.size || 0);
+      const captureDurationSec = Number(currentAudioInfo?.durationSec || 0);
+      const frameIntervalSec = tunnelLike ? 0.4 : 0.5;
+      const clipFrames = downsampleFramesUniform(
+        frameSnapshotsRef.current,
+        tunnelLike ? 12 : 24,
+      );
 
       appendRuntimeLog("info", `上传策略: ${uploadProfile.label}`);
+      if (tunnelMode) {
+        appendRuntimeLog(
+          "warn",
+          "Cursor 端口转发：优先上传小 webm；否则上传全程均匀抽帧（非末帧 JPEG）",
+        );
+      }
       if (isCloudflareQuickTunnel()) {
         appendRuntimeLog(
           "warn",
@@ -1041,31 +1234,35 @@ export default function App() {
       }
 
       if (!videoBlob || videoBlob.size === 0) {
-        appendRuntimeLog("warn", "视频 clip 为空，回退单帧 JPEG");
+        appendRuntimeLog("warn", "视频 clip 为空，回退多帧 JPEG 序列");
         videoBlob = await dataUrlToBlob(imageDataUrl);
         videoMime = "image/jpeg";
         videoFilename = "capture.jpg";
-      } else if (
-        tunnelMode &&
-        (totalUploadBytes > TUNNEL_MAX_MULTIPART_BYTES ||
-          (videoMime.startsWith("video/") && videoBlob.size > MAX_VIDEO_BYTES))
-      ) {
-        appendRuntimeLog(
-          "warn",
-          `Cursor 隧道：合计 ${Math.round(totalUploadBytes / 1024)}KB 超限，改用 JPEG 单次上传（≤${Math.round(TUNNEL_MAX_MULTIPART_BYTES / 1024)}KB）`,
-        );
-        videoBlob = await dataUrlToBlob(imageDataUrl);
-        videoMime = "image/jpeg";
-        videoFilename = "capture.jpg";
+      } else if (tunnelLike && videoMime.startsWith("video/")) {
+        const room =
+          TUNNEL_MAX_MULTIPART_BYTES - (wavBlob?.size || 0) - 48 * 1024; // 预留 metadata/多帧
+        if (videoBlob.size > 0 && videoBlob.size <= Math.max(room, 24 * 1024)) {
+          appendRuntimeLog(
+            "info",
+            `隧道模式：保留 webm 小 clip (${Math.round(videoBlob.size / 1024)}KB)，并附带 ${clipFrames.length} 帧时序备份`,
+          );
+        } else {
+          appendRuntimeLog(
+            "warn",
+            `隧道带宽不足保留 webm(${Math.round((videoBlob?.size || 0) / 1024)}KB)，改用全程 ${clipFrames.length} 帧 JPEG clip`,
+          );
+          videoBlob = await dataUrlToBlob(imageDataUrl);
+          videoMime = "image/jpeg";
+          videoFilename = "capture.jpg";
+        }
       } else if (
         !serverMode &&
-        !tunnelMode &&
         videoMime.startsWith("video/") &&
         (videoBlob.size > MAX_VIDEO_BYTES || videoChunkCount > MAX_SAFE_UPLOAD_CHUNKS)
       ) {
         appendRuntimeLog(
           "warn",
-          `视频需 ${videoChunkCount} 次分块，改用 JPEG`,
+          `视频过大，改用全程 ${clipFrames.length} 帧 JPEG clip`,
         );
         videoBlob = await dataUrlToBlob(imageDataUrl);
         videoMime = "image/jpeg";
@@ -1074,11 +1271,6 @@ export default function App() {
         appendRuntimeLog(
           "info",
           `服务器直连：保留 webm (${Math.round(videoBlob.size / 1024)}KB，整包 multipart)`,
-        );
-      } else if (tunnelMode && videoMime.startsWith("video/")) {
-        appendRuntimeLog(
-          "info",
-          `Cursor 隧道：webm ${Math.round(videoBlob.size / 1024)}KB + 音频，单次 multipart 上传`,
         );
       } else if (videoMime.includes("mp4")) {
         videoFilename = "capture.mp4";
@@ -1124,11 +1316,19 @@ export default function App() {
             video_mime: videoMime,
             video_filename: videoFilename,
             cloudflare_tunnel: isCloudflareQuickTunnel(),
-            checkpoint_preset: checkpointPreset,
-            capture_frames_b64: [...frameSnapshotsRef.current],
+            cursor_tunnel: isCursorTunnelMode(),
+            capture_duration_sec: captureDurationSec,
+            frame_sample_interval_sec: frameIntervalSec,
+            ...(autoPreset
+              ? { auto_preset: true }
+              : { checkpoint_preset: checkpointPreset }),
+            // 始终附带全程均匀抽帧（后端优先 webm 时序窗；否则用这些帧组小 clip）
+            capture_frames_b64: clipFrames,
             temporal_inference: {
-              max_windows: isCloudflareQuickTunnel() || isCursorTunnelMode() ? 4 : 10,
-              stride_sec: 1.5,
+              max_windows: tunnelLike ? 5 : 10,
+              stride_sec: tunnelLike ? 1.0 : 1.0,
+              aggregation: "peak_non_neutral",
+              jpeg_prefer_single_window: false,
             },
           },
           onUploadProgress: (p) => {
@@ -1159,7 +1359,7 @@ export default function App() {
       if (emo.temporal_summary?.num_windows) {
         appendRuntimeLog(
           "info",
-          `长时推理 ${emo.temporal_summary.num_windows} 窗 / ${emo.temporal_summary.total_duration_sec}s · 聚合 ${emo.temporal_summary.aggregation || "recency_weighted"}`,
+          `长时推理 ${emo.temporal_summary.num_windows} 窗 / ${emo.temporal_summary.total_duration_sec}s · 聚合 ${emo.temporal_summary.aggregation || "peak_non_neutral"}`,
           { windows: emo.temporal_windows?.length },
         );
       }
@@ -1246,28 +1446,52 @@ export default function App() {
           <p>实时通道：{wsConnected ? "已连接" : "未连接"}</p>
           <div className="model-switcher">
             <div className="model-switcher-head">
-              <span className="model-switcher-title">推理模型</span>
-              {loadedPresetId === checkpointPreset ? (
+              <span className="model-switcher-title">推理模型（AVT）</span>
+              {autoPreset ? (
+                <span className="chip ok model-loaded-chip">自动：按语言选模型</span>
+              ) : loadedPresetId === checkpointPreset ? (
                 <span className="chip ok model-loaded-chip">当前加载：{loadedPresetId}</span>
               ) : (
                 <span className="chip warn model-loaded-chip">后端：{loadedPresetId} · 请求：{checkpointPreset}</span>
               )}
             </div>
+            <label className="model-switcher-auto">
+              <input
+                type="checkbox"
+                checked={autoPreset}
+                disabled={capturing || isAnalyzing}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setAutoPreset(on);
+                  if (!on) {
+                    setPreloadHint("已关闭自动选模，使用下方手动列表");
+                  } else {
+                    setPreloadHint("已开启：中文→v2，英文→M3_M7");
+                  }
+                }}
+              />
+              自动按语言选择模型（中文→zh_agent_v2，英文→M3_M7）
+            </label>
             <select
               className="model-switcher-select"
               value={checkpointPreset}
-              onChange={(e) => setCheckpointPreset(e.target.value)}
-              disabled={capturing || isAnalyzing}
+              onChange={(e) => handlePresetChange(e.target.value)}
+              disabled={capturing || isAnalyzing || autoPreset}
             >
-              {presetOptions.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label || opt.id}
-                  {opt.experimental ? " [实验]" : opt.recommended ? " [推荐]" : ""}
-                </option>
+              {presetGroups.map((g) => (
+                <optgroup key={g.id} label={g.label}>
+                  {g.items.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {formatPresetOptionLabel(opt)}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
+            {preloadHint ? <p className="model-switcher-hint">{preloadHint}</p> : null}
             <p className="model-switcher-hint">
-              切换 preset 后下次推理生效；服务端默认 preset 由 .env 的 MODEL_CHECKPOINT_PRESET 决定。
+              选项按优先级 P0–P5；均为 AVT 三模态。关闭「自动」后切换会预热 GPU；默认 .env 为{" "}
+              {modelStatus?.checkpoint_preset_env || DEFAULT_PRESET}。
             </p>
           </div>
         </div>
@@ -1380,7 +1604,7 @@ export default function App() {
             </button>
           </div>
           <p className="hint">
-            操作说明：点击「开始录制」→ 连续说话（中文场景建议 <strong>≥5 秒</strong>，最长 {getCaptureMaxSec()} 秒）→ 点击「结束并推理」。
+            操作说明：点击「开始录制」→ 连续说话（中文场景建议 <strong>≥3 秒</strong>，Cursor 隧道最长 {getCaptureMaxSec()} 秒）→ 点击「结束并推理」。
             系统将完整采集按 <strong>3 秒</strong>一窗送入模型；中文 ASR 默认 bypass 英文 text encoder，并结合语义校准。
             {isCloudflareQuickTunnel() ? (
               <span className="hint-warn"> Cloudflare 隧道下最长约 10 秒以控制请求超时。</span>
@@ -1615,7 +1839,7 @@ export default function App() {
             长时模式：{emotion.pipeline_trace.temporal.num_windows} 窗 ×{" "}
             {emotion.pipeline_trace.temporal.window_sec}s，全长{" "}
             {emotion.pipeline_trace.temporal.total_duration_sec}s，聚合{" "}
-            {emotion.pipeline_trace.temporal.aggregation || "recency_weighted"}
+            {emotion.pipeline_trace.temporal.aggregation || "peak_non_neutral"}
           </p>
         ) : null}
         {emotion?.pipeline_trace?.steps?.length ? (

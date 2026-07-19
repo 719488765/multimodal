@@ -1,0 +1,7 @@
+{
+  "source": "/mnt/sda1/lizhichun_24/code/multimodal/project/data/agent_benchmark/zh_cases.json",
+  "split": "train",
+  "target_count": 100,
+  "created": 97,
+  "note": "Reuse MELD A/V with Chinese text from zh_cases benchmark"
+}

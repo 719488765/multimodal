@@ -1,0 +1,6 @@
+{
+  "src": "/mnt/sda1/lizhichun_24/code/multimodal/project/data/agent_capture/train",
+  "prefix": "meld_train_acap",
+  "injected": 97,
+  "train_labels_dir": "/mnt/sda1/lizhichun_24/code/multimodal/project/data/train/labels"
+}

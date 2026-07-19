@@ -1,0 +1,495 @@
+{
+  "generated_at": "2026-07-09T13:09:02.132471+00:00",
+  "log_dir": "/mnt/sda1/lizhichun_24/code/multimodal/project/logs_sdavt_v3_r4",
+  "dry_run": false,
+  "run_count": 57,
+  "rebuilt": 57,
+  "would_rebuild": 0,
+  "skipped": [],
+  "runs": [
+    {
+      "run_dir": "SDAVT_R4_C3_C1_baseline_20260625_200937",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 45,
+      "best_f1": 0.533564,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_C3_C2_w2v_large_20260626_004150",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 47,
+      "best_f1": 0.562863,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_C3_C3_focal_20260626_043125",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 50,
+      "best_f1": 0.552599,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_C4_C2_c3_base_acc",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 60,
+      "best_f1": 0.315176,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_C4_C3_c3_warmstart_acc",
+      "status": "rebuilt",
+      "events_before": 2,
+      "val_epochs": 48,
+      "best_f1": 0.605655,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_C_ES",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 41,
+      "best_f1": 0.578565,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_C_LFA_20260624_070022",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 28,
+      "best_f1": 0.297813,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_C_LFT_20260624_073903",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 28,
+      "best_f1": 0.308119,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_C_STD_20260624_081739",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 27,
+      "best_f1": 0.240546,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_C_TS_20260622_140751",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 28,
+      "best_f1": 0.257899,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_C_TS_20260624_085905",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 42,
+      "best_f1": 0.243646,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_M_ES",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 16,
+      "best_f1": 0.610869,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_M_LFA_20260623_210443",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 12,
+      "best_f1": 0.456243,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_M_LFT_20260623_225301",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 14,
+      "best_f1": 0.420657,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_M_STD_20260622_140751",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 13,
+      "best_f1": 0.459452,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_M_STD_20260624_005729",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 14,
+      "best_f1": 0.444707,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_M_TS_20260622_163603",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 18,
+      "best_f1": 0.382593,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_M_TS_20260624_030111",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 21,
+      "best_f1": 0.36817,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_O_ES_20260624_101647",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 21,
+      "best_f1": 0.679162,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_O_LFT_20260622_214330",
+      "status": "rebuilt",
+      "events_before": 2,
+      "val_epochs": 9,
+      "best_f1": 0.598017,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_O_LFT_20260624_110504",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 9,
+      "best_f1": 0.598017,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_O_STD_20260622_222125",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 9,
+      "best_f1": 0.598786,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_O_STD_20260624_115119",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 9,
+      "best_f1": 0.598786,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_O_TS_20260622_232044",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 9,
+      "best_f1": 0.597758,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_F_O_TS_20260624_123518",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 9,
+      "best_f1": 0.597758,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_M3_M0_baseline_20260625_200937",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 19,
+      "best_f1": 0.607971,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_M3_M1_roberta",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 24,
+      "best_f1": 0.682309,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_M3_M2_w2v_large_20260625_233919",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 19,
+      "best_f1": 0.557229,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_M3_M3_uniform_20260626_031222",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 19,
+      "best_f1": 0.61052,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_M3_M4_focal_20260626_062916",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 19,
+      "best_f1": 0.607907,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_M3_M5_context_20260626_073046",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 19,
+      "best_f1": 0.572508,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_M3_M6_moddrop_20260626_113831",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 22,
+      "best_f1": 0.607863,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_M3_M7_combo",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 33,
+      "best_f1": 0.69575,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_C_A",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 43,
+      "best_f1": 0.141233,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_C_AT",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 29,
+      "best_f1": 0.131227,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_C_AV",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 45,
+      "best_f1": 0.330265,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_C_AVT",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 49,
+      "best_f1": 0.326278,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_C_T",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 21,
+      "best_f1": 0.08906,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_C_V",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 50,
+      "best_f1": 0.353761,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_C_VT",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 24,
+      "best_f1": 0.315912,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_M_A",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 49,
+      "best_f1": 0.482056,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_M_AT",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 11,
+      "best_f1": 0.673624,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_M_AV",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 37,
+      "best_f1": 0.478041,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_M_AVT",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 21,
+      "best_f1": 0.68181,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_M_T",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 22,
+      "best_f1": 0.674069,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_M_V",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 25,
+      "best_f1": 0.268985,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_M_VT",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 22,
+      "best_f1": 0.673761,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_O_A",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 22,
+      "best_f1": 0.636226,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_O_AT",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 15,
+      "best_f1": 0.692243,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_O_AV",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 11,
+      "best_f1": 0.641525,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_O_AVT",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 15,
+      "best_f1": 0.698247,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_O_T",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 24,
+      "best_f1": 0.708682,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_O_V",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 9,
+      "best_f1": 0.627378,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_A_O_VT",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 28,
+      "best_f1": 0.705037,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_B_C0_20260623_005627",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 32,
+      "best_f1": 0.588871,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_B_M1_20260623_005627",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 14,
+      "best_f1": 0.568046,
+      "events_after": 1
+    },
+    {
+      "run_dir": "SDAVT_R4_R4_B_O0_20260623_032138",
+      "status": "rebuilt",
+      "events_before": 1,
+      "val_epochs": 21,
+      "best_f1": 0.679162,
+      "events_after": 1
+    }
+  ],
+  "kept_tags": {
+    "train": [
+      "loss",
+      "cls_loss",
+      "cls_ce_unweighted"
+    ],
+    "val": [
+      "loss",
+      "cls_loss",
+      "cls_ce_unweighted",
+      "accuracy",
+      "precision",
+      "recall",
+      "f1"
+    ]
+  },
+  "removed_tags": [
+    "train/reg_loss",
+    "train/domain_loss",
+    "train/trend_loss",
+    "val/reg_loss",
+    "val/domain_loss",
+    "val/trend_loss",
+    "train/loss_total",
+    "train/loss_classification",
+    "val/loss_total",
+    "val/loss_classification"
+  ]
+}

@@ -41,11 +41,35 @@
 | Preset | 场景 | 结果 | 备注 |
 |--------|------|------|------|
 | **sdavt_meld_v3_r4** (A) | 英文/中文 text | ✅ PASS | sad prob 0.486 / 0.508 |
-| **sdavt_meld_zh_agent** (B) | 中文 ASR 主导 | ✅ PASS（bootstrap ckpt） | sad=0.164（finetune 进行中，完成后可再测） |
+| **sdavt_meld_zh_agent** (B) | 中文 ASR 主导 | ✅ PASS（**finetune ckpt**） | sad=**0.488** / 0.473（2026-07-13 重测，val F1=0.601） |
 | **meld_only** | 对照 | ✅ PASS | legacy remap 后 sad=0.544 |
 | **ap2_m1** | 对照 | ✅ PASS | legacy remap 后 sad=0.535 |
 
-**结论：** `remap_legacy_checkpoint_state_dict` 已修复旧 AP1/AP2 checkpoint 加载；Preset B 通过 bootstrap + 可选 finetune 启用。
+**结论：** `remap_legacy_checkpoint_state_dict` 已修复旧 AP1/AP2 checkpoint 加载；Preset B 已完成 M3_M7 中文 finetune 并部署。
+
+### Preset B 重测（2026-07-13，finetune 完成后）
+
+| 检查项 | bootstrap（07-09） | finetune 后（07-13） |
+|--------|-------------------|----------------------|
+| 离线 val F1 | — | **0.601**（epoch 9，early-stop @13） |
+| `eval_zh_agent_benchmark.py` | 30/30 | **30/30** |
+| `eval_agent_capture_cases.py` | 30/30 | **30/30** |
+| infer-upload `我很难过` sad prob | 0.164 | **0.488**（final=sad） |
+| infer-upload `I am so sad today` sad prob | — | **0.473**（final=sad） |
+| 默认 preset / checkpoint | bootstrap | `sdavt_meld_zh_agent` → `checkpoint_finetune_best_f1.pth` |
+
+### Preset B v2（2026-07-13，中文策略 + 二阶段微调）
+
+| 检查项 | v1 | v2 |
+|--------|----|----|
+| 离线 val F1 | 0.601 | **0.6054**（epoch 10，256-sample finetune + zh 增强数据） |
+| 训练数据 | MELD 英文字幕 | MELD + 500 `*_zh.txt` + 97 agent_capture 注入 |
+| `eval_zh_agent_benchmark.py` | 30/30 | **30/30** |
+| `eval_agent_capture_cases.py` | 30/30 | **30/30** |
+| 自动路由中文 preset | `sdavt_meld_zh_agent` | **`sdavt_meld_zh_agent_v2`** |
+| 默认部署 preset | v1 | **v2**（F1 优于 v1） |
+
+**工程增强（同批）：** 前端「按语言自动选模型」+ optgroup 分组；`metadata.auto_preset`；`PRESET_METADATA.language/group`。
 
 ---
 
@@ -70,7 +94,7 @@
 
 ## 已知问题与建议
 
-1. **中文 finetune**：`finetune_m3m7_chinese_agent.sh` 已在 tmux `m3m7_zh_finetune` 后台运行（GPU1）；完成后 checkpoint 覆盖 bootstrap 版本。
+1. **中文 finetune**：✅ 已完成（2026-07-10 early-stop，best val F1=0.601）；Preset B 已部署并重测 PASS。
 2. **旧 preset**：`meld_only` / `ap2_m1` 已通过 `utils/helpers.py::remap_legacy_checkpoint_state_dict` 自动 remap。
 3. **text-only degraded**：无 A/V 时 `degraded_mode=true`；在线采集应启用三模态以提升 raw 置信度。
 4. **LLM**：Ollama 未启动时话术为 template 兜底；答辩前需 `start_ollama.sh`。

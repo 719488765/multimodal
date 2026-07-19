@@ -1,0 +1,117 @@
+================================================================================
+  工作周报
+  姓名：李智春
+  周期：2026年6月26日 — 2026年7月9日
+  项目：多模态情绪识别 — SDAVT v3 R4 实验收官与 Agent 联调
+================================================================================
+
+【本周期结论】
+
+  本周期完成 SDAVT v3 R4 论文主轨剩余实验（P3 配方收尾、P4 模态消融、CREMA
+  Tier-2 补训），并正式关闭 GPU 实验线。三数据集 Tier-2 验收：MELD M3_M7
+  F1=0.696、MOSEI F_O_ES F1=0.679 均 PASS；CREMA C4_C3 Acc=0.605
+  较 P3 最优提升 3.8pp，但未达 0.63 目标，定为 CLOSE-OUT。MELD 视频单模态
+  重训（R4_A_M_V）F1=0.269，确认属任务固有难度，不阻塞 Agent。
+
+  实验线关闭后，主轨转向 Agent：默认 preset 切换为 M3_M7（sdavt_meld_v3_r4），
+  完成 Phase 0–3 系统化测试；修复旧 checkpoint 格式兼容与中文 preset bootstrap。
+  在线推理 sad 类校准链路已验证可用，中文 finetune 仍在后台推进。
+
+
+--------------------------------------------------------------------------------
+一、本周期主要工作
+--------------------------------------------------------------------------------
+
+1. P3 配方消融收尾与 MELD 冠军确定（6 月 26—29 日）
+
+   6 月 26 日 P3-M/C 大部分 job 完成；6 月 28 日发现 RoBERTa tokenizer 加载
+   异常，修复 AutoTokenizer 配置并重跑 M3_M1/M7；6 月 29 日 anti-overfit 重训
+   后 M3_M7_combo 确立为 MELD 冠军。
+
+       | 数据集 | 冠军 Job | 最优 F1 | 最优 Acc | Tier-2 目标 | 判定   |
+       |--------|----------|---------|----------|-------------|--------|
+       | MELD   | M3_M7    | 0.696   | 0.712    | F1≥0.59     | PASS   |
+       | CREMA  | C3_C2    | 0.563   | 0.567    | Acc≥0.63    | 未达标 |
+       | MOSEI  | F_O_ES   | 0.679   | 0.727    | F1≥0.67     | PASS   |
+
+   MELD 冠军配方：roberta-base + wav2vec2-large + ResNet50，context window +
+   modality dropout + focal loss。CREMA P3 阶段 wav2vec-large 有效（C3_C2 最优），
+   但距 Tier-2 目标仍差约 6pp，留待 P3-C+ 补训。
+
+
+2. P4 模态消融（Table 4，6 月 26—30 日）
+
+   在 ES 融合固定下，对 7 种模态组合 × 3 数据集共 21 组 job 并行训练。
+
+   MELD 关键发现：文本单模态 R4_A_M_T F1=0.674，接近全模态 AVT（0.682）；视频
+   单模态 R4_A_M_V F1 仅约 0.27，对话情感高度依赖文本/音频。MOSEI 文本模态
+   同样接近全模态（T 0.709 vs AVT 0.698）。CREMA 各模态整体偏低，与 P3 结论
+   一致（表演情感以声学/视觉为主，文本为中性朗读句）。
+
+   6 月 30 日发现 CREMA P4 多 job 共用错误 log_run_dir: SDAVT_R4_F_C_ES，
+   导致 F_C_ES 指标污染；已删除错误配置、重置 7 个 job 并重跑，归档污染
+   logs/checkpoint。同日主实验文档意外丢失，从 agent transcript 与实验产物
+   恢复 第17–18节 及 Tier-2 验收记录。
+
+
+3. CREMA Tier-2 补训与 R4 Close-out（7 月 7—9 日）
+
+   P3-C+ 三轮 CREMA Acc 导向补训：C4_C1 NaN 失败；C4_C2 激进改 recipe 退化
+   （Acc 0.354）；C4_C3 warm-start 自 C3_C2 有效，7 月 9 日 ep65 达峰值。
+
+       | Job      | Best Acc | Best F1 | 相对 C3_C2 | 判定    |
+       |----------|----------|---------|------------|---------|
+       | C4_C3    | 0.605    | 0.606   | +3.8pp     | PARTIAL |
+       | R4_A_M_V | 0.423*   | 0.269   | —          | FAIL    |
+
+   *R4_A_M_V 为 MELD 视频单模态 close-out 重训；yaml 配置矛盾已修复，但 F1
+   仍远低于文本模态，early-stop @ ep24。经评估：R4 GPU 实验线正式关闭，
+   不再计划内重训；CREMA 论文固定 C4_C3 Acc=0.605 并标注与 SOTA 差距；MELD V
+   作 Table 4 脚注，不阻塞 Agent。
+
+
+4. Agent 测试与工程优化（7 月 9 日）
+
+   R4 close-out 后执行 Phase 0–3 系统化测试，默认 preset sdavt_meld_v3_r4
+   （M3_M7，F1=0.696）。
+
+   · Phase 0：verify_trained_model / health / model/status 基线确认 PASS；
+     冷启动 ~16s，热推理 text-only avg ~32ms。
+   · Phase 1：仲裁 pytest 3/3；中文 benchmark 30/30；capture cases 30/30。
+   · Phase 2：Preset A（M3_M7）PASS；Preset B（sdavt_meld_zh_agent）bootstrap
+     ckpt PASS；旧 preset meld_only/ap2_m1 经 legacy remap 恢复可切换。
+   · Phase 3：E2E infer-upload 中英文 sad 样本校准链路验证 PASS（raw happy →
+     校准 sad，sad prob 0.486/0.508）。
+
+   工程修复：utils/helpers.py::remap_legacy_checkpoint_state_dict 对齐旧
+   checkpoint 权重格式；bootstrap_m3m7_zh_agent_checkpoint.py 生成中文 preset
+   初始权重；finetune 脚本修正 start_epoch 与无效参数。中文 M3_M7 finetune 在
+   tmux m3m7_zh_finetune 后台运行，完成后可覆盖 bootstrap 版本。
+
+
+--------------------------------------------------------------------------------
+二、问题处理与阶段认识
+--------------------------------------------------------------------------------
+
+  · P3 RoBERTa tokenizer 异常 → AutoTokenizer 修复 + M3_M1/M7 重跑，M3_M7 新冠军。
+  · CREMA P4 log_run_dir 污染 → 重置 7 jobs，归档污染产物，F_C_ES 待 P4 后重训。
+  · CREMA Tier-2 未达 0.63 → C4_C3 warm-start 有效但 ROI 递减，close-out 固定 0.605。
+  · MELD V 单模态极弱 → 任务固有难度（T 0.674 vs V 0.269），不重训。
+  · 旧 Agent preset 无法加载 → legacy state_dict remap，meld_only/ap2_m1 可切换。
+  · 模态消融证实 MELD/MOSEI 文本主导、CREMA 声学主导，与单域训练策略一致。
+  · R4 主轨 55/55 done，audit P0=0；论文叙事与 Agent 部署已解耦，Agent 不依赖
+    未达标 job（CREMA Acc、MELD V）。
+
+
+--------------------------------------------------------------------------------
+三、下一步
+--------------------------------------------------------------------------------
+
+  1. 完成 M3_M7 中文 finetune，重测 Preset B 并更新 Agent 测试报告。
+  2. Agent 在线三模态采集 E2E 验证（非 text-only degraded 场景）。
+  3. 答辩前启动 Ollama，验证 LLM 话术生成链路。
+  4. 修复 smoke 测试非法 base64 payload（test_infer_and_agent_flow）。
+  5. 论文撰写：Table 主结果（M3_M7 / F_O_ES / C4_C3）、Table 4 模态消融、
+     CREMA CLOSE-OUT 与 MELD V 脚注说明。
+
+================================================================================

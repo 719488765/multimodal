@@ -27,14 +27,16 @@ EMOTION_NAMES_CN = ["开心", "难过", "生气", "害怕", "平静", "焦虑", 
 DEFAULT_TEMPORAL_CFG: Dict[str, Any] = {
     "enabled": True,
     "window_sec": 3.0,
-    "stride_sec": 3.0,
+    "stride_sec": 1.0,
     "max_windows": 10,
     "max_capture_sec": 30.0,
     "max_capture_sec_cloudflare": 12.0,
-    "aggregation": "recency_weighted",
+    # 峰值非中性：避免「惊恐→恢复平静」被末窗/近因加权刷成 neutral
+    "aggregation": "peak_non_neutral",
     "recency_alpha": 1.5,
     "batch_windows": True,
     "short_path_margin_sec": 0.2,
+    "jpeg_prefer_single_window": False,
 }
 
 
@@ -189,6 +191,24 @@ def aggregate_window_predictions(
         confidences = [float(w.get("confidence", 0.0)) for w in window_results]
         best = int(np.argmax(confidences))
         return dict(window_results[best])
+    elif strategy in ("peak_non_neutral", "max_emotion", "peak_emotion"):
+        # 选「非中性类峰值」最高的时间窗，捕捉惊恐/愤怒等瞬时表情
+        neutral_id = 4
+        best_i = 0
+        best_score = -1.0
+        for i, p in enumerate(probs_list):
+            if len(p) <= neutral_id:
+                score = float(np.max(p)) if len(p) else 0.0
+            else:
+                score = float(np.max(np.concatenate([p[:neutral_id], p[neutral_id + 1 :]])))
+            if score > best_score:
+                best_score = score
+                best_i = i
+        chosen = dict(window_results[best_i])
+        chosen["aggregation_strategy"] = "peak_non_neutral"
+        chosen["peak_non_neutral_score"] = best_score
+        chosen["peak_window_index"] = best_i
+        return chosen
     else:
         weights = recency_weights(n, alpha=recency_alpha)
 

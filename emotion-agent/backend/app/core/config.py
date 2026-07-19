@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -58,6 +58,13 @@ CHECKPOINT_PRESETS: Dict[str, Dict[str, str]] = {
             "checkpoint_finetune_best_f1.pth"
         ),
     },
+    "sdavt_meld_zh_agent_v2": {
+        "train_config": "config/sdavt_v3_r4/p3_m3/meld/M3_M7_chinese_agent_v2.yaml",
+        "checkpoint": (
+            "checkpoints_sdavt_v3_r4/SDAVT_R4_M3_M7_chinese_agent_v2/"
+            "checkpoint_finetune_best_f1.pth"
+        ),
+    },
     "sdavt_mosei_r4": {
         "train_config": "config/sdavt_v3_r4/p2_fusion/mosei/F_O_ES_emotion_shift.yaml",
         "checkpoint": (
@@ -66,78 +73,222 @@ CHECKPOINT_PRESETS: Dict[str, Dict[str, str]] = {
         ),
     },
     "sdavt_crema_r4": {
-        "train_config": "config/sdavt_v3_r4/p3_c3/crema/C3_C2_w2v_large.yaml",
+        "train_config": "config/sdavt_v3_r4/p3_c_plus/crema/C4_C3_c3_warmstart_acc.yaml",
         "checkpoint": (
-            "checkpoints_sdavt_v3_r4/SDAVT_R4_C3_C2_w2v_large_20260626_004150/"
+            "checkpoints_sdavt_v3_r4/SDAVT_R4_C4_C3_c3_warmstart_acc/"
             "checkpoint_pretrain_best_f1.pth"
         ),
     },
 }
 
+# 中文 BERT 骨干 preset：在线必须保留文本模态（AVT）
+CHINESE_BERT_PRESETS = frozenset({"sdavt_meld_zh_agent", "sdavt_meld_zh_agent_v2"})
 
-# 前端 /model/status 展示用摘要（实验对照 preset 标注 experimental）
+# 英文 Transformer 骨干：中文 ASR 时可选 skip_text
+ENGLISH_BACKBONE_PRESETS = frozenset(
+    {
+        "sdavt_meld_v3_r4",
+        "sdavt_mosei_r4",
+        "sdavt_crema_r4",
+        "meld_only",
+        "mosei_only",
+        "ap2_m1",
+        "ap4_w005",
+    }
+)
+
+# 前端 /model/status 展示用摘要（AVT 优先级列表）
 PRESET_METADATA: Dict[str, Dict[str, Any]] = {
-    "sdavt_meld_v3_r4": {
-        "label": "sdavt_meld_v3_r4（R4 冠军 M3_M7 F1=0.696，推荐）",
+    "sdavt_meld_zh_agent_v2": {
+        "label": "中文 Agent v2（AVT）",
         "dataset": "meld",
-        "best_f1": 0.696,
-        "best_acc": 0.712,
+        "language": "zh",
+        "group": "recommended",
+        "group_label": "推荐部署",
+        "modalities": "AVT",
+        "priority": 0,
+        "best_f1": 0.6114,
+        "best_acc": 0.6363,
         "recommended": True,
         "experimental": False,
+        "ui_visible": True,
+        "text_backbone": "bert-base-chinese",
+    },
+    "sdavt_meld_v3_r4": {
+        "label": "英文 MELD 冠军 M3_M7（AVT）",
+        "dataset": "meld",
+        "language": "en",
+        "group": "recommended",
+        "group_label": "推荐部署",
+        "modalities": "AVT",
+        "priority": 1,
+        "best_f1": 0.6957,
+        "best_acc": 0.7121,
+        "recommended": True,
+        "experimental": False,
+        "ui_visible": True,
+        "text_backbone": "roberta-base",
     },
     "sdavt_meld_zh_agent": {
-        "label": "sdavt_meld_zh_agent（M3_M7 + 中文 BERT，中文场景推荐）",
+        "label": "中文 Agent v1（AVT）",
         "dataset": "meld",
-        "recommended": True,
+        "language": "zh",
+        "group": "chinese",
+        "group_label": "中文对照",
+        "modalities": "AVT",
+        "priority": 2,
+        "best_f1": 0.6010,
+        "best_acc": 0.6273,
+        "recommended": False,
         "experimental": False,
+        "ui_visible": True,
+        "text_backbone": "bert-base-chinese",
+    },
+    "sdavt_mosei_r4": {
+        "label": "MOSEI F_O_ES（AVT）",
+        "dataset": "mosei",
+        "language": "en",
+        "group": "experimental",
+        "group_label": "实验",
+        "modalities": "AVT",
+        "priority": 3,
+        "best_f1": 0.6792,
+        "best_acc": 0.7269,
+        "recommended": False,
+        "experimental": True,
+        "ui_visible": True,
+        "text_backbone": "bert-base-uncased",
+    },
+    "sdavt_crema_r4": {
+        "label": "CREMA Warmstart C4_C3（AVT）",
+        "dataset": "crema",
+        "language": "en",
+        "group": "experimental",
+        "group_label": "实验",
+        "modalities": "AVT",
+        "priority": 4,
+        "best_f1": 0.6057,
+        "best_acc": 0.6048,
+        "recommended": False,
+        "experimental": True,
+        "ui_visible": True,
+        "text_backbone": "bert-base-uncased",
+    },
+    "ap2_m1": {
+        "label": "三混合 AP2-M1（AVT）",
+        "dataset": "mixed",
+        "language": "en",
+        "group": "legacy",
+        "group_label": "历史",
+        "modalities": "AVT",
+        "priority": 5,
+        "best_f1": 0.56,
+        "best_acc": 0.61,
+        "recommended": False,
+        "experimental": False,
+        "ui_visible": True,
+        "text_backbone": "bert-base-uncased",
     },
     "meld_only": {
-        "label": "meld_only（MELD 单域 AP1，对照）",
+        "label": "meld_only（MELD 单域 AP1）",
         "dataset": "meld",
+        "language": "en",
+        "group": "hidden",
+        "group_label": "高级",
+        "modalities": "AVT",
+        "priority": 90,
         "best_f1": 0.54,
         "recommended": False,
         "experimental": False,
-    },
-    "ap2_m1": {
-        "label": "ap2_m1（三混合 F1≈0.56）",
-        "dataset": "mixed",
-        "best_f1": 0.56,
-        "recommended": False,
-        "experimental": False,
-    },
-    "agent_chinese": {
-        "label": "agent_chinese（中文 BERT 微调）",
-        "dataset": "mixed",
-        "recommended": False,
-        "experimental": False,
+        "ui_visible": False,
     },
     "mosei_only": {
-        "label": "mosei_only（MOSEI 单域 AP1，实验）",
+        "label": "mosei_only（MOSEI 单域 AP1）",
         "dataset": "mosei",
+        "language": "en",
+        "group": "hidden",
+        "group_label": "高级",
+        "modalities": "AVT",
+        "priority": 91,
         "recommended": False,
         "experimental": True,
+        "ui_visible": False,
+    },
+    "agent_chinese": {
+        "label": "agent_chinese（遗留 AP2 中文）",
+        "dataset": "mixed",
+        "language": "zh",
+        "group": "hidden",
+        "group_label": "高级",
+        "modalities": "AVT",
+        "priority": 92,
+        "recommended": False,
+        "experimental": False,
+        "ui_visible": False,
     },
     "ap4_w005": {
         "label": "ap4_w005（DA 预训练）",
         "dataset": "mixed",
+        "language": "en",
+        "group": "hidden",
+        "group_label": "高级",
+        "modalities": "AVT",
+        "priority": 93,
+        "best_f1": 0.528,
         "recommended": False,
         "experimental": False,
-    },
-    "sdavt_mosei_r4": {
-        "label": "sdavt_mosei_r4（R4 MOSEI F_O_ES F1=0.679，仅实验）",
-        "dataset": "mosei",
-        "best_f1": 0.679,
-        "recommended": False,
-        "experimental": True,
-    },
-    "sdavt_crema_r4": {
-        "label": "sdavt_crema_r4（R4 CREMA C3_C2 Acc=0.567，仅实验）",
-        "dataset": "crema",
-        "best_acc": 0.567,
-        "recommended": False,
-        "experimental": True,
+        "ui_visible": False,
     },
 }
+
+
+def list_available_presets(*, include_hidden: bool = False) -> List[Dict[str, Any]]:
+    """按 priority 排序的 preset 列表，供 /model/status 与前端下拉使用。"""
+    items: List[Dict[str, Any]] = []
+    for preset_id, paths in CHECKPOINT_PRESETS.items():
+        meta = PRESET_METADATA.get(preset_id, {})
+        ui_visible = bool(meta.get("ui_visible", False))
+        if not include_hidden and not ui_visible:
+            continue
+        priority = int(meta.get("priority", 99))
+        best_f1 = meta.get("best_f1")
+        best_acc = meta.get("best_acc")
+        label = meta.get("label", preset_id)
+        metric_parts = []
+        if best_f1 is not None:
+            metric_parts.append(f"F1={float(best_f1):.3f}")
+        if best_acc is not None:
+            metric_parts.append(f"Acc={float(best_acc):.3f}")
+        metric_str = " / ".join(metric_parts) if metric_parts else ""
+        display = f"[P{priority}] {label}"
+        if metric_str:
+            display = f"{display}｜{metric_str}"
+        if meta.get("recommended"):
+            display = f"{display} [推荐]"
+        elif meta.get("experimental"):
+            display = f"{display} [实验]"
+        items.append(
+            {
+                "id": preset_id,
+                "train_config": paths.get("train_config"),
+                "checkpoint": paths.get("checkpoint"),
+                "label": label,
+                "display_label": display,
+                "best_f1": best_f1,
+                "best_acc": best_acc,
+                "recommended": bool(meta.get("recommended")),
+                "experimental": bool(meta.get("experimental")),
+                "priority": priority,
+                "group": meta.get("group", "other"),
+                "group_label": meta.get("group_label", "其他"),
+                "language": meta.get("language"),
+                "modalities": meta.get("modalities", "AVT"),
+                "ui_visible": ui_visible,
+                "text_backbone": meta.get("text_backbone"),
+            }
+        )
+    items.sort(key=lambda x: (x["priority"], x["id"]))
+    return items
 
 
 def _default_project_root() -> str:
@@ -159,7 +310,7 @@ class Settings(BaseSettings):
     app_name: str = "Emotion Agent Backend"
     app_env: str = "dev"
     model_provider: str = "mock"
-    model_checkpoint_preset: str = "meld_only"
+    model_checkpoint_preset: str = "sdavt_meld_zh_agent_v2"
     project_root: str = ""
     model_device: str = "cuda"
     llm_provider: str = "template"
@@ -187,9 +338,9 @@ class Settings(BaseSettings):
         root = Path(self.project_root or _default_project_root()).resolve()
         self.project_root = str(root)
 
-        preset = (self.model_checkpoint_preset or "ap2_m1").lower().strip()
+        preset = (self.model_checkpoint_preset or "sdavt_meld_zh_agent_v2").lower().strip()
         if preset not in CHECKPOINT_PRESETS:
-            preset = "ap2_m1"
+            preset = "sdavt_meld_zh_agent_v2"
             self.model_checkpoint_preset = preset
 
         preset_paths = CHECKPOINT_PRESETS[preset]

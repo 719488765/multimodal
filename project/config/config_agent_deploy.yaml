@@ -147,32 +147,42 @@ default_preset: sdavt_meld_v3_r4
 temporal_inference:
   enabled: true
   window_sec: 3.0
-  stride_sec: 3.0
+  # 重叠小 clip：捕捉「惊恐→恢复平静」中间峰，避免只看末段
+  stride_sec: 1.0
   max_windows: 10
   max_capture_sec: 30.0
   max_capture_sec_cloudflare: 12.0
-  aggregation: recency_weighted
+  # 选非中性峰值窗，避免末窗中性刷掉中段表情
+  aggregation: peak_non_neutral
   recency_alpha: 1.5
   batch_windows: true
   short_path_margin_sec: 0.2
   short_path_max_sec: 6.0
-  jpeg_prefer_single_window: true
+  # 多帧 JPEG 序列也走多窗；禁止因静音/单图关掉时序
+  jpeg_prefer_single_window: false
 
 asr_emotion_calibration:
   enabled: true
+  # 中文 BERT preset（zh_agent / v2）在 routes 内强制跳过词典校准，避免「像纯文本分类」
 
 emotion_arbitration:
   enabled: true
   flat_threshold: 0.38
   low_conf_threshold: 0.42
   neutral_override_threshold: 0.55
+  # 中文 BERT AVT：仅当模型 max_prob 低于此阈值才允许 ASR 词典纠偏
+  chinese_bert_flat_threshold: 0.32
 
 chinese_agent:
   enabled: true
   default_language: zh
+  # 中文 BERT（zh_agent / v2）使用 text_modality_weight_zh_bert；英文骨干遇中文 ASR 用低权重
   text_modality_weight_zh: 0.15
+  text_modality_weight_zh_bert: 0.85
   leader_modal_zh: audio
-  skip_text_on_zh_asr: true
+  # 仅对英文骨干 + 中文 ASR 跳过文本；中文 BERT preset 代码侧强制保留 AVT 文本
+  skip_text_on_zh_asr: false
+  skip_text_on_zh_asr_english_backbone_only: true
   flat_threshold: 0.38
   arbitration:
     positive_asr_over_neutral: true

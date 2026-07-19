@@ -142,11 +142,8 @@ if [[ "$FORCE_RESTART" == "1" ]]; then
   if [[ "$SKIP_TUNNEL" != "1" ]]; then
     tmux has-session -t "$CF_SESSION" 2>/dev/null && tmux kill-session -t "$CF_SESSION" || true
   fi
-  for port in 8000 9010; do
-    if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
-      fuser -k "${port}/tcp" 2>/dev/null || true
-    fi
-  done
+  # Never use fuser/ps — they hang and fork-storm CPU on this host.
+  bash "$ROOT/scripts/safe_free_port.sh" 8000 9010 || true
   sleep 2
 elif tmux has-session -t "$SESSION" 2>/dev/null; then
   echo ""

@@ -1,7 +1,7 @@
 # 多模态情感分析 — 全栈技术架构与实验总结（Master）
 
 **版本**：2026-07-09 v2（R4 close-out）  
-**状态**：R4 **close-out 完成**；MELD **M3_M7** F1=0.696；MOSEI **F_O_ES** F1=0.679；CREMA **C4_C3** Acc=0.605（Tier-2 CLOSE-OUT）；Agent 默认 **sdavt_meld_v3_r4**  
+**状态**：R4 **close-out 完成**；MELD **M3_M7** F1=0.696；MOSEI **F_O_ES** F1=0.679；CREMA **C4_C3** Acc=0.605（Tier-2 CLOSE-OUT）；Agent 默认 **`sdavt_meld_zh_agent_v2`**（英文自动 → `sdavt_meld_v3_r4`）  
 **配套图**：[`figures/system_architecture_figure.svg`](figures/system_architecture_figure.svg)  
 **指标刷新**：`python scripts/build_master_doc_metrics.py` → `assemble_master_document.py`（2026-07-09 11:55 UTC）
 
@@ -655,10 +655,11 @@ flowchart TB
 
 | 项 | 值 |
 |----|-----|
-| Preset | `sdavt_meld_v3_r4` → M3_M7_combo |
-| 融合 | emotion_shift, leader text（中文可 override audio） |
+| Preset | **`sdavt_meld_zh_agent_v2`**（中文默认）；英文自动 → `sdavt_meld_v3_r4` |
+| 融合 | emotion_shift；中文 leader 可 override audio；**中文 BERT 保留文本（AVT）** |
 | 后处理 | temporal 多窗 + ASR 校准 + 仲裁 |
 | 配置源 | `project/config/config_agent_deploy.yaml` |
+| 前端列表 | AVT P0–P5（见 `R4_FULL_EXPERIMENT_REPORT.md` §12 / `config.py` PRESET_METADATA） |
 
 
 ## 第10章 前端模块与交互

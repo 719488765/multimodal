@@ -6,9 +6,19 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FRONTEND="$ROOT/frontend"
 BACKEND="$ROOT/backend"
 FORCE_RESTART="${FORCE_RESTART:-0}"
+SAFE_FREE_PORT="$ROOT/scripts/safe_free_port.sh"
 
 port_in_use() {
   ss -tlnp 2>/dev/null | grep -q ':8000 '
+}
+
+free_port_8000() {
+  # Never use fuser/ps — they hang and can fork-storm this host.
+  if [[ -x "$SAFE_FREE_PORT" ]]; then
+    bash "$SAFE_FREE_PORT" 8000 || true
+  else
+    echo "WARN: missing $SAFE_FREE_PORT; skip port kill"
+  fi
 }
 
 health_ok() {
@@ -34,8 +44,8 @@ fi
 echo "==> 3/3 启动后端 (8000)"
 if port_in_use; then
   if [[ "$FORCE_RESTART" == "1" ]]; then
-    echo "释放 8000 端口（FORCE_RESTART=1）..."
-    fuser -k 8000/tcp 2>/dev/null || true
+    echo "释放 8000 端口（FORCE_RESTART=1，无 fuser/ps）..."
+    free_port_8000
     sleep 2
   elif health_ok; then
     echo ""
@@ -47,8 +57,8 @@ if port_in_use; then
     curl -s http://127.0.0.1:8000/api/v1/health | python3 -m json.tool 2>/dev/null | head -12 || true
     exit 0
   else
-    echo "8000 被占用但 health 失败，正在释放端口..."
-    fuser -k 8000/tcp 2>/dev/null || true
+    echo "8000 被占用但 health 失败，正在释放端口（无 fuser/ps）..."
+    free_port_8000
     sleep 2
   fi
 fi

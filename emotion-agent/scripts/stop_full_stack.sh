@@ -12,10 +12,12 @@ for s in "$SESSION" emotion-demo "$CF_SESSION" cf_tunnel; do
   fi
 done
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SAFE_FREE_PORT="$ROOT/scripts/safe_free_port.sh"
 for port in 8000 9010; do
   if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
-    echo "释放端口 ${port}..."
-    fuser -k "${port}/tcp" 2>/dev/null || true
+    echo "释放端口 ${port}（无 fuser/ps）..."
+    bash "$SAFE_FREE_PORT" "$port" || true
   fi
 done
 

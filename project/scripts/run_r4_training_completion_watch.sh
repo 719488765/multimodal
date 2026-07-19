@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Chain post-audit: CREMA P3-C+ (GPU1) || MELD drain -> MOSEI rerun (GPU0) -> final audit.
+# DISABLED BY DEFAULT after R4 close-out. Opt-in:
+#   ENABLE_R4_WATCH=1 bash scripts/run_r4_training_completion_watch.sh
 set -euo pipefail
+
+if [[ "${ENABLE_R4_WATCH:-0}" != "1" ]]; then
+  echo "[training_completion_watch] DISABLED (default). Set ENABLE_R4_WATCH=1 to run."
+  exit 0
+fi
 
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$PROJECT_DIR"

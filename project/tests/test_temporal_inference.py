@@ -44,14 +44,44 @@ def test_recency_weights_favor_later():
     assert abs(w.sum() - 1.0) < 1e-6
 
 
-def test_aggregate_recency_weighted():
+def test_aggregate_peak_non_neutral_prefers_mid_fear():
+    """惊恐在中段、末窗恢复平静：应选 fear 而非末窗 neutral。"""
     windows = [
-        {"all_probs": [0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1], "confidence": 0.9, "valence": -0.5, "arousal": 0.2},
-        {"all_probs": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], "confidence": 1.0, "valence": 0.5, "arousal": 0.8},
+        {
+            "emotion_id": 4,
+            "emotion_label": "neutral",
+            "confidence": 0.55,
+            "all_probs": [0.05, 0.05, 0.05, 0.10, 0.55, 0.10, 0.10],
+            "valence": 0.0,
+            "arousal": 0.1,
+        },
+        {
+            "emotion_id": 3,
+            "emotion_label": "fear",
+            "confidence": 0.62,
+            "all_probs": [0.03, 0.03, 0.05, 0.62, 0.12, 0.10, 0.05],
+            "valence": -0.4,
+            "arousal": 0.8,
+        },
+        {
+            "emotion_id": 4,
+            "emotion_label": "neutral",
+            "confidence": 0.78,
+            "all_probs": [0.04, 0.04, 0.04, 0.05, 0.78, 0.03, 0.02],
+            "valence": 0.0,
+            "arousal": 0.05,
+        },
     ]
-    out = aggregate_window_predictions(windows, strategy="recency_weighted", recency_alpha=2.0)
-    assert out["emotion_label"] == "other"
-    assert out["confidence"] > 0.5
+    out = aggregate_window_predictions(windows, strategy="peak_non_neutral")
+    assert out["emotion_label"] == "fear"
+    assert out.get("peak_window_index") == 1
+
+
+def test_compute_windows_overlap_stride():
+    windows = compute_windows(6.0, window_sec=3.0, stride_sec=1.0, max_windows=10)
+    assert len(windows) >= 4
+    assert windows[0].start_sec == 0.0
+    assert windows[1].start_sec == 1.0
 
 
 def test_slice_audio_window_tensor_pad():

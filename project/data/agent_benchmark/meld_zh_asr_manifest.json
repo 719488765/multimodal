@@ -1,0 +1,110 @@
+{
+  "note": "Chinese text augmentation for MELD train; training may mix en/zh via zh_text_mix_prob",
+  "output_suffix": "_zh.txt",
+  "sources_count": 500,
+  "written": 500,
+  "entries": [
+    {
+      "en": "data/train/text/meld_train_0001.txt",
+      "zh": "data/train/text/meld_train_0001_zh.txt",
+      "zh_preview": "我很高兴实验取得了成功！哈哈哈哈！"
+    },
+    {
+      "en": "data/train/text/meld_train_0002.txt",
+      "zh": "data/train/text/meld_train_0002_zh.txt",
+      "zh_preview": "哈哈哈哈哈哈"
+    },
+    {
+      "en": "data/train/text/meld_train_0003.txt",
+      "zh": "data/train/text/meld_train_0003_zh.txt",
+      "zh_preview": "我很难过，心里非常难受。"
+    },
+    {
+      "en": "data/train/text/meld_train_0004.txt",
+      "zh": "data/train/text/meld_train_0004_zh.txt",
+      "zh_preview": "我真的太生气了，烦死了！"
+    },
+    {
+      "en": "data/train/text/meld_train_0005.txt",
+      "zh": "data/train/text/meld_train_0005_zh.txt",
+      "zh_preview": "我好害怕，这件事太可怕了。"
+    },
+    {
+      "en": "data/train/text/meld_train_0006.txt",
+      "zh": "data/train/text/meld_train_0006_zh.txt",
+      "zh_preview": "最近压力好大，我很焦虑不安。"
+    },
+    {
+      "en": "data/train/text/meld_train_0007.txt",
+      "zh": "data/train/text/meld_train_0007_zh.txt",
+      "zh_preview": "今天阴天，气温十五度。"
+    },
+    {
+      "en": "data/train/text/meld_train_0008.txt",
+      "zh": "data/train/text/meld_train_0008_zh.txt",
+      "zh_preview": "还好吧，一般般。"
+    },
+    {
+      "en": "data/train/text/meld_train_0009.txt",
+      "zh": "data/train/text/meld_train_0009_zh.txt",
+      "zh_preview": "这次结果 yyds，太赞了！"
+    },
+    {
+      "en": "data/train/text/meld_train_0010.txt",
+      "zh": "data/train/text/meld_train_0010_zh.txt",
+      "zh_preview": "今天 emo 了，破防了。"
+    },
+    {
+      "en": "data/train/text/meld_train_0011.txt",
+      "zh": "data/train/text/meld_train_0011_zh.txt",
+      "zh_preview": "我并不是很开心。"
+    },
+    {
+      "en": "data/train/text/meld_train_0012.txt",
+      "zh": "data/train/text/meld_train_0012_zh.txt",
+      "zh_preview": "超级开心，特别高兴！"
+    },
+    {
+      "en": "data/train/text/meld_train_0013.txt",
+      "zh": "data/train/text/meld_train_0013_zh.txt",
+      "zh_preview": "气死我了，讨厌死了！"
+    },
+    {
+      "en": "data/train/text/meld_train_0014.txt",
+      "zh": "data/train/text/meld_train_0014_zh.txt",
+      "zh_preview": "想哭，太委屈了。"
+    },
+    {
+      "en": "data/train/text/meld_train_0015.txt",
+      "zh": "data/train/text/meld_train_0015_zh.txt",
+      "zh_preview": "呵呵呵"
+    },
+    {
+      "en": "data/train/text/meld_train_0016.txt",
+      "zh": "data/train/text/meld_train_0016_zh.txt",
+      "zh_preview": "我很担心明天的答辩。"
+    },
+    {
+      "en": "data/train/text/meld_train_0017.txt",
+      "zh": "data/train/text/meld_train_0017_zh.txt",
+      "zh_preview": "真棒，成功了！"
+    },
+    {
+      "en": "data/train/text/meld_train_0018.txt",
+      "zh": "data/train/text/meld_train_0018_zh.txt",
+      "zh_preview": "火大，这太过分了！"
+    },
+    {
+      "en": "data/train/text/meld_train_0019.txt",
+      "zh": "data/train/text/meld_train_0019_zh.txt",
+      "zh_preview": "压力太大，好烦心。"
+    },
+    {
+      "en": "data/train/text/meld_train_0020.txt",
+      "zh": "data/train/text/meld_train_0020_zh.txt",
+      "zh_preview": "看到结果我笑了，太满意。"
+    }
+  ],
+  "entries_truncated": true,
+  "total_entries": 500
+}

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import io
 import logging
 import os
 import tempfile
@@ -47,6 +48,45 @@ def suffix_for_mime(mime: str, filename: str = "") -> str:
     return ".webm"
 
 
+def probe_video_duration_sec(video_bytes: bytes, suffix: str = ".webm") -> float:
+    """探测 webm/mp4 时长（秒）；失败返回 0。"""
+    if not video_bytes or cv2 is None:
+        return 0.0
+    suffix = suffix if suffix.startswith(".") else f".{suffix}"
+    fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="emotion_probe_")
+    os.close(fd)
+    try:
+        with open(tmp_path, "wb") as f:
+            f.write(video_bytes)
+        cap = cv2.VideoCapture(tmp_path)
+        if not cap.isOpened():
+            return 0.0
+        try:
+            fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+            total = float(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0)
+            if fps > 0 and total > 0:
+                return total / fps
+            # 部分 webm FRAME_COUNT 不可靠：顺序读估时长
+            n = 0
+            while cap.isOpened() and n < 900:
+                ret, _ = cap.read()
+                if not ret:
+                    break
+                n += 1
+            if fps <= 0 or fps > 120:
+                fps = 30.0
+            return n / fps if n else 0.0
+        finally:
+            cap.release()
+    except Exception:
+        return 0.0
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
 def frames_list_to_tensor(frames: list, num_frames: int) -> torch.Tensor:
     if not frames:
         raise ValueError("frames_list_to_tensor: empty frames")
@@ -61,17 +101,60 @@ def frames_list_to_tensor(frames: list, num_frames: int) -> torch.Tensor:
     return torch.from_numpy(arr).unsqueeze(0)
 
 
+def decode_image_bytes_to_rgb(image_bytes: bytes, frame_size: int) -> Optional[np.ndarray]:
+    """解码单张 JPEG/PNG 为 RGB uint8 (H,W,3)。"""
+    if not image_bytes:
+        return None
+    if cv2 is not None:
+        arr = np.frombuffer(image_bytes, dtype=np.uint8)
+        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if frame is not None:
+            frame = cv2.resize(frame, (frame_size, frame_size))
+            return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    try:
+        from PIL import Image
+
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        return np.array(image.resize((frame_size, frame_size)), dtype=np.uint8)
+    except Exception:
+        return None
+
+
+def preprocess_video_from_frame_bytes_list(
+    frame_bytes_list: List[bytes],
+    config: dict,
+) -> Tuple[Optional[torch.Tensor], str, int]:
+    """把多张 JPEG 字节均匀组成训练同构的 (1,T,C,H,W) clip。"""
+    video_config = config.get("data", {}).get("video", {})
+    num_frames = int(video_config.get("num_frames", 4))
+    frame_size = int(video_config.get("frame_size", 112))
+    frames: List[np.ndarray] = []
+    for raw in frame_bytes_list or []:
+        rgb = decode_image_bytes_to_rgb(raw, frame_size)
+        if rgb is not None:
+            frames.append(rgb)
+    if not frames:
+        return None, "empty", 0
+    extracted = len(frames)
+    tensor = frames_list_to_tensor(frames, num_frames)
+    mode = "multi_frame_sequence" if extracted > 1 else "single_frame_fallback"
+    return tensor, mode, extracted
+
+
 def sample_frames_from_capture(
     cap: "cv2.VideoCapture",
     num_frames: int,
     frame_size: int,
     clip_duration_sec: Optional[float] = None,
     clip_offset_sec: float = 0.0,
+    *,
+    sample_full_clip: bool = False,
 ) -> Tuple[List[np.ndarray], int]:
     """与 MultimodalDataset._load_video 一致的抽帧策略。
 
-    clip_duration_sec 非空时取指定时长窗口；clip_offset_sec 为窗口起点（秒）。
-    clip_offset_sec=0 且未指定 duration 时取全片；仅 duration 时取尾部窗口（兼容旧逻辑）。
+    - sample_full_clip=True：全片均匀 linspace（与训练一致，适合 agent 短 clip）
+    - clip_offset_sec>0：从起点取 duration 窗口（时序多窗）
+    - 仅 duration 且 offset=0：旧逻辑取尾部窗口（兼容）
     """
     frames: List[np.ndarray] = []
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
@@ -89,7 +172,7 @@ def sample_frames_from_capture(
     if total_frames > 0:
         start_frame = 0
         end_frame = max(total_frames - 1, 0)
-        if clip_duration_sec and clip_duration_sec > 0:
+        if not sample_full_clip and clip_duration_sec and clip_duration_sec > 0:
             clip_frames = max(int(clip_duration_sec * fps), num_frames)
             offset_frames = max(0, int(clip_offset_sec * fps))
             if clip_offset_sec > 0:
@@ -104,7 +187,8 @@ def sample_frames_from_capture(
             if ret:
                 _append_frame(frame)
     else:
-        max_read = max(num_frames * 12, num_frames)
+        # 某些容器 FRAME_COUNT 不可靠：顺序读尽量多帧再窗口化
+        max_read = max(num_frames * 90, 300)
         read_count = 0
         buffer: List[np.ndarray] = []
         while cap.isOpened() and read_count < max_read:
@@ -114,7 +198,7 @@ def sample_frames_from_capture(
                 break
             frame_bgr = cv2.resize(frame, (frame_size, frame_size))
             buffer.append(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
-        if clip_duration_sec and clip_duration_sec > 0 and buffer:
+        if not sample_full_clip and clip_duration_sec and clip_duration_sec > 0 and buffer:
             keep = max(int(clip_duration_sec * fps), num_frames)
             if clip_offset_sec > 0:
                 skip = max(0, int(clip_offset_sec * fps))
@@ -137,13 +221,17 @@ def preprocess_video_from_file_path(
     config: dict,
     clip_offset_sec: float = 0.0,
     clip_duration_sec: Optional[float] = None,
+    *,
+    sample_full_clip: bool = False,
 ) -> Optional[torch.Tensor]:
     if cv2 is None:
         raise RuntimeError("opencv-python is required for video preprocessing")
     video_config = config.get("data", {}).get("video", {})
     frame_size = video_config.get("frame_size", 112)
     num_frames = video_config.get("num_frames", 4)
-    if clip_duration_sec is None:
+    if sample_full_clip:
+        clip_duration_sec = None
+    elif clip_duration_sec is None:
         clip_duration_sec = config.get("data", {}).get("audio", {}).get("duration", 3.0)
 
     cap = cv2.VideoCapture(video_path)
@@ -157,13 +245,19 @@ def preprocess_video_from_file_path(
             frame_size,
             clip_duration_sec=clip_duration_sec,
             clip_offset_sec=clip_offset_sec,
+            sample_full_clip=sample_full_clip,
         )
     finally:
         cap.release()
 
     if not frames:
         return None
-    logger.debug("video file %s extracted %d frames", video_path, extracted)
+    logger.debug(
+        "video file %s extracted %d frames full_clip=%s",
+        video_path,
+        extracted,
+        sample_full_clip,
+    )
     return frames_list_to_tensor(frames, num_frames)
 
 
@@ -187,6 +281,8 @@ def preprocess_video_from_file_bytes(
     suffix: str = ".webm",
     clip_offset_sec: float = 0.0,
     clip_duration_sec: Optional[float] = None,
+    *,
+    sample_full_clip: bool = False,
 ) -> Optional[torch.Tensor]:
     if not video_bytes:
         return None
@@ -204,6 +300,7 @@ def preprocess_video_from_file_bytes(
             config,
             clip_offset_sec=clip_offset_sec,
             clip_duration_sec=clip_duration_sec,
+            sample_full_clip=sample_full_clip,
         )
     finally:
         try:

@@ -22,11 +22,12 @@ from app.services.upload_buffer import assemble as assemble_upload, put_chunk
 from app.services.asr_service import ASRService
 from app.services.ingest_buffer import IngestBuffer
 from app.services.llm_service import LLMService
-from app.core.config import CHECKPOINT_PRESETS, PRESET_METADATA, settings
+from app.core.config import CHINESE_BERT_PRESETS, list_available_presets, settings
 from app.services.chinese_inference_router import build_inference_profile
 from app.services.emotion_arbitration import arbitrate_emotion
 from app.services.model_router import ModelRouter
 from app.services.session_store import SessionStore
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v1")
 ingest_buffer = IngestBuffer(window_size_sec=3.0, step_sec=1.0)
@@ -36,6 +37,10 @@ llm_service = LLMService()
 session_store = SessionStore()
 ws_clients: Dict[str, List[WebSocket]] = defaultdict(list)
 logger = logging.getLogger(__name__)
+
+
+class ModelPreloadRequest(BaseModel):
+    preset: str = Field(..., description="CHECKPOINT_PRESETS id to warm-load")
 
 
 def get_model_router() -> ModelRouter:
@@ -151,7 +156,7 @@ def health() -> dict:
 
 
 @router.get("/model/status")
-def model_status() -> dict:
+def model_status(all: bool = False) -> dict:
     """详细模型绑定状态，用于确认是否使用训练 checkpoint（非 mock）。"""
     router_ = get_model_router()
     model_health = router_.health()
@@ -160,21 +165,7 @@ def model_status() -> dict:
         and model_health.get("loaded") is True
         and model_health.get("provider") == "current"
     )
-    available_presets = []
-    for preset_id, paths in CHECKPOINT_PRESETS.items():
-        meta = PRESET_METADATA.get(preset_id, {})
-        available_presets.append(
-            {
-                "id": preset_id,
-                "train_config": paths.get("train_config"),
-                "checkpoint": paths.get("checkpoint"),
-                "label": meta.get("label", preset_id),
-                "best_f1": meta.get("best_f1"),
-                "best_acc": meta.get("best_acc"),
-                "recommended": bool(meta.get("recommended")),
-                "experimental": bool(meta.get("experimental")),
-            }
-        )
+    available_presets = list_available_presets(include_hidden=bool(all))
     return {
         "ok": True,
         "using_trained_checkpoint": using_trained,
@@ -188,6 +179,12 @@ def model_status() -> dict:
         "available_presets": available_presets,
         "model": model_health,
     }
+
+
+@router.post("/model/preload")
+def model_preload(payload: ModelPreloadRequest) -> dict:
+    """预热加载指定 checkpoint preset，减少切换后首次推理延迟。"""
+    return get_model_router().preload(payload.preset)
 
 
 @router.post("/ingest/chunk", response_model=IngestChunkResponse)
@@ -289,9 +286,18 @@ async def _emotion_infer_core(
     emotion["model_emotion_id"] = model_emotion_id
     emotion["model_confidence"] = model_confidence
 
+    # 中文 BERT 微调轨：文本已进模型，禁止词典校准/强仲裁把结果改成「像纯文本分类」
+    used_preset = str(emotion.get("checkpoint_preset") or meta.get("checkpoint_preset") or "").lower()
+    trust_multimodal = used_preset in CHINESE_BERT_PRESETS
+
     label_before_calibration = model_label
-    _apply_asr_calibration(emotion, merged_text, metadata)
-    label_after_calibration = emotion.get("emotion_label")
+    if trust_multimodal:
+        emotion["asr_calibration_applied"] = False
+        emotion["asr_calibration_reason"] = "disabled_for_chinese_bert_avt"
+        label_after_calibration = model_label
+    else:
+        _apply_asr_calibration(emotion, merged_text, metadata)
+        label_after_calibration = emotion.get("emotion_label")
 
     deploy = _load_deploy_postprocess_config()
     arb_cfg = deploy.get("emotion_arbitration") or {}
@@ -300,6 +306,9 @@ async def _emotion_infer_core(
         or arb_cfg.get("flat_threshold")
         or 0.38
     )
+    if trust_multimodal:
+        # 仅在模型分布极平时才允许轻量仲裁；默认完全信任 AVT checkpoint
+        flat_thr = float(arb_cfg.get("chinese_bert_flat_threshold", 0.32))
     arbitrate_emotion(
         emotion,
         merged_text,
@@ -307,6 +316,7 @@ async def _emotion_infer_core(
         flat_threshold=flat_thr,
         low_conf_threshold=float(arb_cfg.get("low_conf_threshold", 0.42)),
         neutral_override_threshold=float(arb_cfg.get("neutral_override_threshold", 0.55)),
+        trust_model=trust_multimodal,
     )
     trace = emotion.get("pipeline_trace") or {}
     trace_steps: List[Dict[str, Any]] = [

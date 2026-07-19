@@ -53,7 +53,9 @@ from utils.video_frame_utils import (
     is_video_mime,
     preprocess_video_from_file_bytes,
     preprocess_video_from_file_path,
+    preprocess_video_from_frame_bytes_list,
     preprocess_video_window_from_bytes,
+    probe_video_duration_sec,
     suffix_for_mime,
 )
 
@@ -97,8 +99,12 @@ def preprocess_video_from_bytes(
     *,
     video_mime: str = "",
     video_filename: str = "",
+    sample_full_clip: bool = False,
 ) -> Tuple[Optional[torch.Tensor], str, int]:
-    """返回 (tensor, decode_mode, frames_extracted)。"""
+    """返回 (tensor, decode_mode, frames_extracted)。
+
+    sample_full_clip=True：对 webm/mp4 全片均匀抽帧（agent 在线 clip 默认）。
+    """
     if not video_bytes:
         return None, "empty", 0
 
@@ -107,7 +113,12 @@ def preprocess_video_from_bytes(
 
     if is_video_mime(video_mime) or suffix_for_mime(video_mime, video_filename) in (".webm", ".mp4", ".mov"):
         suffix = suffix_for_mime(video_mime, video_filename)
-        tensor = preprocess_video_from_file_bytes(video_bytes, config, suffix=suffix)
+        tensor = preprocess_video_from_file_bytes(
+            video_bytes,
+            config,
+            suffix=suffix,
+            sample_full_clip=sample_full_clip,
+        )
         if tensor is not None:
             return tensor, "video_file", num_frames
 
@@ -307,6 +318,48 @@ class EmotionInferenceService:
     def set_temporal_config(self, overrides: Optional[Dict[str, Any]] = None) -> None:
         self._temporal_cfg = merge_temporal_config(overrides)
 
+    def _estimate_sample_duration_sec(self, sample: Dict[str, Any]) -> float:
+        """用音频 / 元数据 / 视频文件时长取最大值，避免静音表情只按末帧判。"""
+        metadata = sample.get("metadata") or {}
+        candidates: List[float] = []
+        try:
+            meta_dur = float(metadata.get("capture_duration_sec") or 0.0)
+            if meta_dur > 0:
+                candidates.append(meta_dur)
+        except (TypeError, ValueError):
+            pass
+
+        audio_b64 = sample.get("audio_chunk_b64") or ""
+        if audio_b64 and self.config is not None:
+            raw = decode_base64_bytes(audio_b64)
+            audio_cfg = self.config.get("data", {}).get("audio", {})
+            sr = int(audio_cfg.get("sample_rate", 16000))
+            waveform = load_audio_waveform(raw, sample_rate=sr)
+            if waveform is not None:
+                candidates.append(audio_duration_sec(waveform, sr))
+
+        video_b64 = sample.get("video_chunk_b64") or ""
+        video_mime = str(metadata.get("video_mime") or "")
+        video_filename = str(metadata.get("video_filename") or "")
+        raw_video = decode_base64_bytes(video_b64) if video_b64 else b""
+        if raw_video and (
+            is_video_mime(video_mime)
+            or suffix_for_mime(video_mime, video_filename) in (".webm", ".mp4", ".mov")
+        ):
+            vdur = probe_video_duration_sec(
+                raw_video, suffix=suffix_for_mime(video_mime, video_filename)
+            )
+            if vdur > 0:
+                candidates.append(vdur)
+
+        frames_b64 = metadata.get("capture_frames_b64") or []
+        if len(frames_b64) >= 2:
+            # 前端按固定间隔采样：用帧数粗估时长（默认 0.4s/帧）
+            interval = float(metadata.get("frame_sample_interval_sec") or 0.4)
+            candidates.append(max(len(frames_b64) - 1, 1) * interval)
+
+        return max(candidates) if candidates else 0.0
+
     def predict_from_sample(self, sample: Dict[str, Any]) -> Dict[str, Any]:
         if not self._loaded or self.config is None:
             raise RuntimeError("EmotionInferenceService.load() must be called first")
@@ -315,32 +368,34 @@ class EmotionInferenceService:
         temporal_cfg = merge_temporal_config(
             {**self._temporal_cfg, **metadata.get("temporal_inference", {})}
         )
-        audio_b64 = sample.get("audio_chunk_b64") or ""
-        if temporal_cfg.get("enabled") and audio_b64:
-            raw = decode_base64_bytes(audio_b64)
-            audio_cfg = self.config.get("data", {}).get("audio", {})
-            sr = audio_cfg.get("sample_rate", 16000)
-            waveform = load_audio_waveform(raw, sample_rate=sr)
-            total_sec = audio_duration_sec(waveform, sr) if waveform is not None else 0.0
+        if temporal_cfg.get("enabled"):
+            total_sec = self._estimate_sample_duration_sec(sample)
             window_sec = float(temporal_cfg.get("window_sec", 3.0))
             margin = float(temporal_cfg.get("short_path_margin_sec", 0.2))
             use_temporal = should_use_temporal(total_sec, window_sec, margin, enabled=True)
             frames_b64 = metadata.get("capture_frames_b64") or []
             video_mime = str(metadata.get("video_mime") or "")
             is_static_jpeg = (
-                bool(frames_b64)
-                or "jpeg" in video_mime.lower()
-                or str(metadata.get("video_filename") or "").lower().endswith(".jpg")
-            )
+                "jpeg" in video_mime.lower()
+                or str(metadata.get("video_filename") or "").lower().endswith((".jpg", ".jpeg"))
+            ) and len(frames_b64) < 2
             short_max = float(temporal_cfg.get("short_path_max_sec", 6.0))
+            # 仅「真·单帧 JPEG」才可关多窗；多帧序列/webm 必须走时序小 clip
             if (
                 use_temporal
-                and temporal_cfg.get("jpeg_prefer_single_window", True)
+                and temporal_cfg.get("jpeg_prefer_single_window", False)
                 and is_static_jpeg
                 and total_sec <= short_max
             ):
                 use_temporal = False
-            if use_temporal:
+            # 多帧 JPEG 覆盖全时段：即使总时长略短于 window，也至少切 2 窗做峰值聚合
+            if (
+                not use_temporal
+                and len(frames_b64) >= 4
+                and total_sec >= max(2.0, window_sec * 0.6)
+            ):
+                use_temporal = True
+            if use_temporal and (sample.get("audio_chunk_b64") or frames_b64 or sample.get("video_chunk_b64")):
                 return self.predict_from_sample_temporal(sample, temporal_cfg)
 
         return self._predict_from_sample_single(sample)
@@ -364,22 +419,35 @@ class EmotionInferenceService:
         video_filename = str(metadata.get("video_filename") or "")
 
         capture_frames: List[str] = list(metadata.get("capture_frames_b64") or [])
-        if capture_frames:
-            raw_frame = decode_base64_bytes(capture_frames[-1])
-            video, video_decode_mode, frames_extracted = preprocess_video_from_bytes(
-                raw_frame,
-                self.config,
-                video_mime="image/jpeg",
-                video_filename="capture_last.jpg",
-            )
-            video_decode_mode = "multi_frame_sequence"
-        elif video_b64:
-            raw_video = decode_base64_bytes(video_b64)
+        raw_video = decode_base64_bytes(video_b64) if video_b64 else b""
+        looks_like_video_file = bool(raw_video) and (
+            is_video_mime(video_mime)
+            or suffix_for_mime(video_mime, video_filename) in (".webm", ".mp4", ".mov")
+        )
+
+        # 优先真实视频 clip 全片均匀抽帧；否则用全部 JPEG 序列组成 clip（禁止只用末帧）
+        if looks_like_video_file:
             video, video_decode_mode, frames_extracted = preprocess_video_from_bytes(
                 raw_video,
                 self.config,
                 video_mime=video_mime,
                 video_filename=video_filename,
+                sample_full_clip=True,
+            )
+        elif len(capture_frames) >= 1:
+            frame_bytes = [decode_base64_bytes(x) for x in capture_frames]
+            frame_bytes = [b for b in frame_bytes if b]
+            video, video_decode_mode, frames_extracted = preprocess_video_from_frame_bytes_list(
+                frame_bytes,
+                self.config,
+            )
+        elif raw_video:
+            video, video_decode_mode, frames_extracted = preprocess_video_from_bytes(
+                raw_video,
+                self.config,
+                video_mime=video_mime,
+                video_filename=video_filename,
+                sample_full_clip=True,
             )
         if audio_b64:
             audio = preprocess_audio_from_bytes(decode_base64_bytes(audio_b64), self.config)
@@ -545,9 +613,17 @@ class EmotionInferenceService:
 
         raw_audio = decode_base64_bytes(audio_b64) if audio_b64 else b""
         waveform = load_audio_waveform(raw_audio, sample_rate=sample_rate)
-        total_sec = audio_duration_sec(waveform, sample_rate) if waveform is not None else 0.0
+        audio_sec = audio_duration_sec(waveform, sample_rate) if waveform is not None else 0.0
+        total_sec = max(audio_sec, self._estimate_sample_duration_sec(sample))
         if total_sec <= 0:
             return self._predict_from_sample_single(sample)
+
+        # 静音表情：音频波形可能极短，按视频时长补零再切窗
+        target_samples = int(sample_rate * total_sec)
+        if waveform is None:
+            waveform = np.zeros(target_samples, dtype=np.float32)
+        elif len(waveform) < target_samples:
+            waveform = np.pad(waveform, (0, target_samples - len(waveform)), mode="constant")
 
         windows = compute_windows(total_sec, window_sec, stride_sec, max_windows)
         raw_video = decode_base64_bytes(video_b64) if video_b64 else b""
@@ -557,25 +633,16 @@ class EmotionInferenceService:
         )
 
         capture_frames: List[str] = list(metadata.get("capture_frames_b64") or [])
+        # 有真实视频文件时优先按时间窗抽帧；JPEG 序列按时间比例映射到全时段帧
+        prefer_video_file = is_video_file
         video_tensors: List[torch.Tensor] = []
         audio_tensors: List[torch.Tensor] = []
         for spec in windows:
-            if waveform is not None:
-                audio_tensors.append(
-                    slice_audio_window_tensor(waveform, sample_rate, spec.start_sec, window_sec).unsqueeze(0)
-                )
+            audio_tensors.append(
+                slice_audio_window_tensor(waveform, sample_rate, spec.start_sec, window_sec).unsqueeze(0)
+            )
             vt = None
-            if capture_frames:
-                frame_idx = min(spec.index, len(capture_frames) - 1)
-                frame_raw = decode_base64_bytes(capture_frames[frame_idx])
-                if frame_raw:
-                    vt, _, _ = preprocess_video_from_bytes(
-                        frame_raw,
-                        self.config,
-                        video_mime="image/jpeg",
-                        video_filename=f"capture_frame_{frame_idx}.jpg",
-                    )
-            elif is_video_file and raw_video:
+            if prefer_video_file and raw_video:
                 vt = preprocess_video_window_from_bytes(
                     raw_video,
                     self.config,
@@ -583,12 +650,29 @@ class EmotionInferenceService:
                     duration_sec=window_sec,
                     suffix=video_suffix,
                 )
+            elif capture_frames:
+                # 按窗口中点映射到全采集 JPEG 序列（覆盖惊恐→平静全过程）
+                mid = (spec.start_sec + spec.end_sec) * 0.5
+                ratio = mid / max(total_sec, 1e-6)
+                ratio = min(max(ratio, 0.0), 1.0)
+                center = int(round(ratio * (len(capture_frames) - 1)))
+                # 每个时间窗取邻域多帧组成小 clip，而不是单帧复制
+                half = max(1, (len(capture_frames) + len(windows) - 1) // max(len(windows), 1))
+                half = max(1, min(half, 3))
+                lo = max(0, center - half)
+                hi = min(len(capture_frames), center + half + 1)
+                subset = capture_frames[lo:hi] or [capture_frames[center]]
+                frame_bytes = [decode_base64_bytes(x) for x in subset]
+                frame_bytes = [b for b in frame_bytes if b]
+                if frame_bytes:
+                    vt, _, _ = preprocess_video_from_frame_bytes_list(frame_bytes, self.config)
             elif raw_video:
                 vt, _, _ = preprocess_video_from_bytes(
                     raw_video,
                     self.config,
                     video_mime=video_mime,
                     video_filename=video_filename,
+                    sample_full_clip=True,
                 )
             if vt is not None:
                 video_tensors.append(vt)

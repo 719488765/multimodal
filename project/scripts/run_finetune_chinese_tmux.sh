@@ -24,11 +24,26 @@ RUN_CMD="cd '$ROOT' && export HF_HUB_OFFLINE=$HF_HUB_OFFLINE TRANSFORMERS_OFFLIN
 tmux new-session -d -s "$SESSION" -x 200 -y 50 bash -lc "$RUN_CMD"
 
 sleep 2
-TRAIN_PID="$(pgrep -f 'train.py.*ap2_M1_chinese_text_agent' | head -1 || true)"
+# /proc scan only — never pgrep/ps (they hang and fork-storm on this host).
+TRAIN_PID="$(python3 - <<'PY'
+import os, re
+pat = re.compile(r"train\.py.*ap2_M1_chinese_text_agent")
+for pid in os.listdir("/proc"):
+    if not pid.isdigit():
+        continue
+    try:
+        raw = open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ").decode("utf-8", "replace")
+    except OSError:
+        continue
+    if pat.search(raw):
+        print(pid)
+        break
+PY
+)"
 
 echo "==> tmux 会话: $SESSION"
 echo "==> 日志文件: $LOG"
-echo "==> 训练 PID: ${TRAIN_PID:-（启动中，稍后用 pgrep 查看）}"
+echo "==> 训练 PID: ${TRAIN_PID:-（启动中，稍后用 tmux/日志查看）}"
 echo "$LOG" > logs_accuracy_seq/finetune_chinese.latest.log
 [[ -n "$TRAIN_PID" ]] && echo "$TRAIN_PID" > logs_accuracy_seq/finetune_chinese.latest.pid
 

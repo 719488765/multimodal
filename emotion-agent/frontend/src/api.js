@@ -2,8 +2,8 @@
 const ENV_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const DEPLOY_MODE = String(import.meta.env.VITE_DEPLOY_MODE || "dev").toLowerCase();
 const SERVER_MAX_MULTIPART_BYTES = 5 * 1024 * 1024;
-/** Cursor/SSH 端口转发：单次 multipart 上限（音频+视频合计） */
-export const TUNNEL_MAX_MULTIPART_BYTES = 384 * 1024;
+/** Cursor/SSH 端口转发：单次 multipart 上限（音频+视频+metadata 合计） */
+export const TUNNEL_MAX_MULTIPART_BYTES = 320 * 1024;
 
 const CHUNK_SIZE = 16384;
 const CHUNK_RETRIES = 3;
@@ -12,8 +12,8 @@ const CHUNKS_PER_REQUEST = 5;
 export const MAX_SAFE_UPLOAD_CHUNKS = 8;
 
 export const CAPTURE_MAX_SEC_SERVER = 30;
-/** Cloudflare/Cursor 隧道 multipart 约 384KB，约可容纳 10s 16kHz mono WAV + 小图 */
-export const CAPTURE_MAX_SEC_TUNNEL = 10;
+/** Cursor/Cloudflare 隧道：短录音，避免 WAV  alone 顶满带宽 */
+export const CAPTURE_MAX_SEC_TUNNEL = 6;
 
 /** 采集上传最长秒数：服务器 30s；隧道 10s（受 384KB 限制） */
 export function getCaptureMaxSec() {
@@ -34,12 +34,25 @@ export function estimateUploadChunks(blobSize) {
   return Math.max(1, Math.ceil(blobSize / CHUNK_SIZE));
 }
 
-/** Cursor 转发 127.0.0.1:8000：多次 POST 易断，仅允许小包单次 multipart */
+/** Cursor 转发 127.0.0.1:8000：多次/大包 POST 易断，仅允许小包单次 multipart */
 export function isCursorTunnelMode() {
   if (typeof window === "undefined") return false;
   const { hostname, port } = window.location;
   const h = (hostname || "").toLowerCase();
-  return (h === "127.0.0.1" || h === "localhost") && port === "8000";
+  // Ports 面板转发后浏览器仍显示 127.0.0.1:8000
+  if ((h === "127.0.0.1" || h === "localhost") && (port === "8000" || port === "")) {
+    return true;
+  }
+  // 部分 Cursor / SSH 远程预览域名
+  if (
+    h.includes("cursor") ||
+    h.endsWith(".ngrok-free.app") ||
+    h.endsWith(".ngrok.io") ||
+    h.includes("vscode-webview")
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /** 浏览器直连服务器（nginx HTTPS 或内网 IP），非 Cursor/Cloudflare 隧道 */
@@ -146,7 +159,8 @@ async function probeHealth(baseUrl, timeoutMs = 4000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(`${baseUrl}/api/v1/health`, { signal: controller.signal });
+    const prefix = baseUrl === "" || baseUrl == null ? "" : String(baseUrl).replace(/\/$/, "");
+    const res = await fetch(`${prefix}/api/v1/health`, { signal: controller.signal });
     if (!res.ok) return false;
     const data = await res.json();
     return Boolean(data?.ok);
@@ -221,7 +235,7 @@ function networkErrorHint(tried) {
       "请通过 Cloudflare 隧道地址打开页面（不要用 :8000 端口）。若仍失败请刷新页面；录制请控制在约 10 秒内。";
   } else if (isCursorTunnelMode()) {
     extra =
-      "Cursor 隧道对大文件/多次请求不稳定；已自动压缩上传。若仍失败请刷新重试，或使用 cloudflared/服务器直连 HTTPS。";
+      "请确认 Cursor Ports 已转发 8000 且后端健康；录制请 ≤6 秒；刷新后重试。仍失败请改用本机直连 http://127.0.0.1:8000 或 cloudflared HTTPS。";
   } else if (isServerDeployMode()) {
     extra = "请确认 nginx 与 backend(8000) 已启动，且 client_max_body_size 足够。";
   } else if (isSamePortBackend() || resolvedBase === "") {
@@ -441,9 +455,19 @@ export async function checkHealth() {
   return requestJson("/api/v1/health", { timeoutMs: 15000 });
 }
 
-export async function fetchModelStatus() {
+export async function fetchModelStatus(includeAll = false) {
   await initApiBase();
-  return requestJson("/api/v1/model/status", { timeoutMs: 15000 });
+  const q = includeAll ? "?all=1" : "";
+  return requestJson(`/api/v1/model/status${q}`, { timeoutMs: 15000 });
+}
+
+export async function preloadModelPreset(preset) {
+  await initApiBase();
+  return requestJson("/api/v1/model/preload", {
+    method: "POST",
+    body: { preset },
+    timeoutMs: 300000,
+  });
 }
 
 export async function ingestChunk(payload) {
@@ -472,18 +496,66 @@ export async function inferEmotionUpload({
   metadata = {},
   onUploadProgress,
 }) {
+  const tunnel = isCursorTunnelMode();
+  const cloudflare = isCloudflareQuickTunnel();
+  const server = isServerDeployMode();
+
+  // 隧道：保留均匀抽帧序列（按体积裁剪），禁止再删成「只剩末帧」
+  const slimMeta = { ...metadata };
+  if (tunnel || cloudflare) {
+    const frames = Array.isArray(slimMeta.capture_frames_b64)
+      ? slimMeta.capture_frames_b64
+      : [];
+    const audioBytes = audioBlob?.size || 0;
+    const videoBytes = videoBlob?.size || 0;
+    const budget = Math.max(
+      8 * 1024,
+      TUNNEL_MAX_MULTIPART_BYTES - audioBytes - videoBytes - 12 * 1024,
+    );
+    let keep = frames;
+    // 粗估：每帧 base64 约 1.37 * 原始；优先保留更多帧覆盖全程
+    const approxFrameBytes = (list) =>
+      list.reduce((s, x) => s + Math.ceil(String(x || "").length * 0.75), 0);
+    while (keep.length > 4 && approxFrameBytes(keep) > budget) {
+      const nextLen = Math.max(4, Math.floor(keep.length * 0.75));
+      const out = [];
+      for (let i = 0; i < nextLen; i += 1) {
+        out.push(keep[Math.round((i * (keep.length - 1)) / (nextLen - 1))]);
+      }
+      keep = out;
+    }
+    if (keep.length) {
+      slimMeta.capture_frames_b64 = keep;
+    } else {
+      delete slimMeta.capture_frames_b64;
+    }
+    if (slimMeta.temporal_inference && typeof slimMeta.temporal_inference === "object") {
+      slimMeta.temporal_inference = {
+        ...slimMeta.temporal_inference,
+        max_windows: Math.min(Number(slimMeta.temporal_inference.max_windows) || 5, 5),
+        stride_sec: Math.min(Number(slimMeta.temporal_inference.stride_sec) || 1.0, 1.0),
+        aggregation: slimMeta.temporal_inference.aggregation || "peak_non_neutral",
+        jpeg_prefer_single_window: false,
+      };
+    }
+  }
+
   const mergedMeta = {
-    ...metadata,
-    video_mime: videoMime || metadata.video_mime || videoBlob?.type || "",
-    video_filename: videoFilename || metadata.video_filename || videoBlob?.name || "capture.webm",
+    ...slimMeta,
+    video_mime: videoMime || slimMeta.video_mime || videoBlob?.type || "",
+    video_filename: videoFilename || slimMeta.video_filename || videoBlob?.name || "capture.webm",
   };
   const videoName =
     mergedMeta.video_filename ||
     (mergedMeta.video_mime?.includes("webm") ? "capture.webm" : "capture.jpg");
-  const totalBytes = (audioBlob?.size || 0) + (videoBlob?.size || 0);
-  const tunnel = isCursorTunnelMode();
-  const cloudflare = isCloudflareQuickTunnel();
-  const server = isServerDeployMode();
+  const mediaBytes = (audioBlob?.size || 0) + (videoBlob?.size || 0);
+  let metaBytes = 0;
+  try {
+    metaBytes = new Blob([JSON.stringify(mergedMeta)]).size;
+  } catch {
+    metaBytes = 0;
+  }
+  const totalBytes = mediaBytes + metaBytes;
   const maxMultipart =
     cloudflare || tunnel
       ? TUNNEL_MAX_MULTIPART_BYTES
@@ -493,8 +565,19 @@ export async function inferEmotionUpload({
 
   if ((tunnel || cloudflare) && totalBytes > maxMultipart) {
     throw new Error(
-      `采集数据 ${Math.round(totalBytes / 1024)}KB 超过隧道单次上限 ${Math.round(maxMultipart / 1024)}KB，请缩短录制（Cloudflare 建议≤10s）或使用 http://127.0.0.1:8000 直连`,
+      `采集数据 ${Math.round(totalBytes / 1024)}KB 超过隧道单次上限 ${Math.round(maxMultipart / 1024)}KB（含 metadata）。请缩短录制至 ≤6 秒后重试。`,
     );
+  }
+
+  // 上传前快速探活，避免隧道已断仍盲目重试
+  if (tunnel || cloudflare) {
+    const healthBase = isApiSameOrigin() ? "" : resolvedBase || "";
+    const alive = await probeHealth(healthBase, 5000);
+    if (!alive) {
+      throw new Error(
+        "无法连接后端 /api/v1/health。请确认 emotion-agent 在 8000 运行，并在 Cursor Ports 面板将 8000 设为 Public/转发后刷新页面。",
+      );
+    }
   }
 
   const useMultipartOnly = tunnel || cloudflare || server || isApiSameOrigin();
@@ -502,11 +585,11 @@ export async function inferEmotionUpload({
     useMultipartOnly ||
     (totalBytes <= maxMultipart && (isApiSameOrigin() || !resolvedBase));
 
-  const inferTimeoutMs = cloudflare ? 120000 : 300000;
+  const inferTimeoutMs = cloudflare ? 90000 : tunnel ? 120000 : 300000;
 
   if (useMultipartFirst && totalBytes <= maxMultipart) {
     let lastMultipartErr = null;
-    const retries = tunnel || cloudflare ? 3 : 1;
+    const retries = tunnel || cloudflare ? 2 : 1;
     for (let attempt = 1; attempt <= retries; attempt += 1) {
       try {
         return await inferEmotionUploadMultipart({
@@ -516,21 +599,21 @@ export async function inferEmotionUpload({
           videoBlob,
           videoName,
           mergedMeta,
-          totalBytes,
+          totalBytes: mediaBytes,
           onUploadProgress,
           timeoutMs: inferTimeoutMs,
         });
       } catch (multipartErr) {
         lastMultipartErr = multipartErr;
         if (attempt < retries) {
-          await new Promise((r) => setTimeout(r, 800 * attempt));
+          await new Promise((r) => setTimeout(r, 600 * attempt));
         }
       }
     }
     if (tunnel || cloudflare) {
-      const via = cloudflare ? "Cloudflare 隧道" : "Cursor 隧道";
+      const via = cloudflare ? "Cloudflare 隧道" : "Cursor 端口转发";
       throw new Error(
-        `${via}单次上传失败（已重试 ${retries} 次）: ${lastMultipartErr?.message || "unknown"}。请刷新页面后重试，勿使用带 :8000 的地址。`,
+        `${via}上传失败（已重试 ${retries} 次）: ${lastMultipartErr?.message || "unknown"}。请确认 Ports 转发 8000、录制 ≤6 秒后刷新重试。`,
       );
     }
   }

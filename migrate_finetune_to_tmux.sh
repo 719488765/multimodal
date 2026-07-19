@@ -8,7 +8,21 @@ SESSION="${TMUX_SESSION:-finetune_chinese}"
 
 cd "$PROJECT"
 
-PIDS=($(pgrep -f 'train.py.*ap2_M1_chinese_text_agent' || true))
+# /proc scan only — never pgrep/ps (they hang and fork-storm on this host).
+mapfile -t PIDS < <(python3 - <<'PY'
+import os, re
+pat = re.compile(r"train\.py.*ap2_M1_chinese_text_agent")
+for pid in os.listdir("/proc"):
+    if not pid.isdigit():
+        continue
+    try:
+        raw = open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ").decode("utf-8", "replace")
+    except OSError:
+        continue
+    if pat.search(raw):
+        print(pid)
+PY
+)
 
 if [[ ${#PIDS[@]} -eq 0 ]]; then
   echo "未发现运行中的 chinese 微调，直接启动 tmux..."

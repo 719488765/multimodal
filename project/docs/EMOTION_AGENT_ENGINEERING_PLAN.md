@@ -310,7 +310,53 @@ R4 GPU 实验线关闭后，Agent 测试成为主轨。完整 Phase 0–3 结果
 | 2 | Preset | 默认 `sdavt_meld_v3_r4`；metadata `checkpoint_preset` 切换 |
 | 3 | E2E | `start_full_stack.sh` 或 backend+ASR；`infer-upload` + `pipeline_trace` |
 
-默认 preset 已更新为 **sdavt_meld_v3_r4**（M3_M7 F1=0.696），见 [`config_agent_deploy.yaml`](../config/config_agent_deploy.yaml) 与 `apply_deploy_preset.sh`。
+默认 preset 已更新为 **sdavt_meld_zh_agent_v2**（M3_M7 中文 BERT 全量微调，val F1=0.6114），见 [`config_agent_deploy.yaml`](../config/config_agent_deploy.yaml) 与 `apply_deploy_preset.sh`。
+
+---
+
+## 15. 模型选择决策表与中文微调策略（2026-07-16 更新）
+
+### 15.1 谁做了中文微调？
+
+| Preset | 文本骨干 | 训练数据 | val F1 | 中文微调 | Agent 定位 |
+|--------|----------|----------|--------|----------|------------|
+| **sdavt_meld_zh_agent_v2** | bert-base-chinese | MELD + zh 增强 + agent_capture | **0.6114** | **是（全量）** | **默认部署 P0** |
+| **sdavt_meld_zh_agent** | bert-base-chinese | MELD（R4 M3_M7） | **0.6010** | 是（v1） | 消融对照 P2 |
+| **sdavt_meld_v3_r4** | roberta-base | MELD | **0.6957** | 否 | 英文推荐 P1 |
+| **sdavt_mosei_r4** / **sdavt_crema_r4** | 英文骨干 | MOSEI / CREMA C4_C3 | 0.679 / Acc0.605 | **否** | 实验 P3/P4 |
+| **ap2_m1** | 英文 | 三混合 | ≈0.56 | 否 | 历史 P5 |
+
+**结论：R4 智能体主轨仅 MELD 完成中文 BERT 微调；默认 `sdavt_meld_zh_agent_v2`。** MOSEI/CREMA 不做中文 finetune。
+
+### 15.2 AVT 前端切换列表（优先级）
+
+| P | Preset | 指标 | UI 分组 |
+|---|--------|------|---------|
+| 0 | `sdavt_meld_zh_agent_v2` | F1=0.6114 Acc=0.6363 | 推荐部署 |
+| 1 | `sdavt_meld_v3_r4` | F1=0.6957 Acc=0.7121 | 推荐部署 |
+| 2 | `sdavt_meld_zh_agent` | F1=0.6010 | 中文对照 |
+| 3 | `sdavt_mosei_r4` | F1=0.6792 | 实验 |
+| 4 | `sdavt_crema_r4`（C4_C3） | Acc=0.6048 | 实验 |
+| 5 | `ap2_m1` | Acc≈0.61 | 历史 |
+
+### 15.3 在线路由与前端切换
+
+| 能力 | 实现 |
+|------|------|
+| 语言 → preset | `chinese_inference_router.suggested_preset` + `metadata.auto_preset=true` |
+| 中文 | 自动 `sdavt_meld_zh_agent_v2`；**保留文本模态（AVT）**；leader_audio |
+| 英文 | 自动 `sdavt_meld_v3_r4` |
+| 英文骨干+中文 ASR | 可选 skip_text（`skip_text_on_zh_asr_english_backbone_only`） |
+| 手动覆盖 | 关闭「自动选模型」，传 `checkpoint_preset`；`POST /model/preload` 预热 |
+| 前端 UI | `App.jsx`：optgroup、P0–P5 指标文案、localStorage、加载提示 |
+| Preset 元数据 | `PRESET_METADATA.priority/group/ui_visible` → `/api/v1/model/status` |
+
+### 15.4 微调优先级（ROI）
+
+1. **P0** MELD 中文 v2 全量（已完成）
+2. **P1** agent_capture 持续采集闭环
+3. **P2** 工程路由 auto_preset + AVT 保留文本（本轮落地）
+4. **不推荐** MOSEI/CREMA 中文 BERT
 
 ---
 

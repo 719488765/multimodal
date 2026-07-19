@@ -83,12 +83,15 @@ def arbitrate_emotion(
     flat_threshold: float = 0.38,
     low_conf_threshold: float = 0.42,
     neutral_override_threshold: float = 0.55,
+    trust_model: bool = False,
 ) -> Dict[str, Any]:
     """
     写入 emotion 字典：
     - final_emotion_label / final_emotion_id / final_confidence
     - arbitration_source / arbitration_reason
     保留原 model 字段于 model_emotion_*。
+
+    trust_model=True（中文 BERT AVT）：默认不覆盖模型；仅当概率分布极平（flat）时才允许 ASR 词典纠偏。
     """
     probs = list(emotion.get("all_probs") or [])
     if len(probs) < len(EMOTION_NAMES):
@@ -109,7 +112,16 @@ def arbitrate_emotion(
     source = "model"
     reason = "model_top1"
 
-    if emotion.get("asr_calibration_applied"):
+    if trust_model:
+        # 中文 BERT AVT：默认信任 checkpoint；仅极平分布时允许 ASR 词典轻量纠偏
+        if is_flat and asr_hint is not None:
+            final_id = asr_hint
+            source = "arbitration"
+            reason = "flat_logits_asr_hint_chinese_bert"
+        else:
+            source = "model"
+            reason = "trust_chinese_bert_avt"
+    elif emotion.get("asr_calibration_applied"):
         final_id = int(emotion.get("emotion_id", model_id))
         source = "asr_calibration"
         reason = str(emotion.get("asr_calibration_reason", "calibrated"))

@@ -61,10 +61,9 @@ _log "starting CREMA P3-C+ on GPU1 (myenv310 python)"
 tmux new-session -d -s r4_crema_p3c_plus \
   "cd \"$PROJECT_DIR\" && source scripts/r4_env.sh && export PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=1 && exec \"\$R4_PYTHON\" scripts/train.py --config config/sdavt_v3_r4/p3_c_plus/crema/C4_C1_combo_acc.yaml --mode pretrain --replace_log_dir >> $STATUS/crema_p3c_plus_live.log 2>&1"
 
-# 8. Restart completion watch (MELD drain -> MOSEI -> wait CREMA)
-_log "starting completion watch"
-tmux new-session -d -s r4_training_completion_watch \
-  "cd \"$PROJECT_DIR\" && exec bash scripts/run_r4_training_completion_watch.sh >> $STATUS/training_completion_watch.log 2>&1"
+# 8. Completion watch is DISABLED by default (ENABLE_R4_WATCH=1 to opt in).
+# Do not auto-start it — continuous watchers previously contributed to host load.
+_log "skip training_completion_watch (disabled by default; use ENABLE_R4_WATCH=1 if needed)"
 
 _log "=== recovery launched ==="
 tmux ls 2>/dev/null || true
