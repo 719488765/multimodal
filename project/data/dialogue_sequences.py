@@ -79,6 +79,16 @@ def _stack_step_field(key: str, steps: List[Dict[str, Any]]) -> Optional[torch.T
 
 def sequence_collate_fn(batch: List[List[Dict[str, Any]]]) -> Dict[str, Any]:
     """batch: list of windows; each window is a list of per-utterance sample dicts."""
+    # 归一化：DataLoader 在某些路径下可能把单个样本直接传进来（而不是窗口列表），
+    # 长度 1 的窗口在语义上等价于片段级，这里统一成 list[dict]，避免下游 .keys() 崩。
+    normalized: List[List[Dict[str, Any]]] = []
+    for w in batch:
+        if isinstance(w, dict):
+            normalized.append([w])
+        else:
+            normalized.append([s for s in w])
+    batch = normalized
+
     B = len(batch)
     T = max(len(w) for w in batch)
     lengths = torch.tensor([len(w) for w in batch], dtype=torch.long)
@@ -230,8 +240,13 @@ class DialogueSequenceDataset(Dataset):
         return [self.base[i] for i in self._windows[idx]]
 
     def __getattr__(self, name: str):
-        # 委托 data_list 等属性给底层数据集（避免递归）。
-        if name in {"base", "_windows", "window", "stride"}:
+        """只把公开属性委托给底层数据集。
+
+        dunder 属性不能转发：DataLoader 会探测 ``dataset.__getitems__``（torch 的批量
+        取数快路径），若经 ``__getattr__`` 转到 ``base``，拿到的就是单样本 dict 而不是
+        窗口列表，时间维退化为 1，融合层随即报模态维度不匹配。
+        """
+        if name.startswith("_"):
             raise AttributeError(name)
         return getattr(self.base, name)
 

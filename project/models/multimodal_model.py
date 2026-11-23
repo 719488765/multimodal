@@ -35,7 +35,9 @@ class MultimodalEmotionModel(nn.Module):
         modalities = model_config.get('modalities', {})
         self.use_video = bool(modalities.get('use_video', True))
         self.use_audio = bool(modalities.get('use_audio', True))
-        self.use_physiological = bool(modalities.get('use_physiological', True))
+        # 三个数据集（CREMA-D / MELD / CMU-MOSEI）均无生理信号；缺省关闭，
+        # 避免配置未传 modalities 时误启用生理分支，产生维度不一致。
+        self.use_physiological = bool(modalities.get('use_physiological', False))
         self.use_text = bool(modalities.get('use_text', True))
         
         # 特征提取器
@@ -203,6 +205,8 @@ class MultimodalEmotionModel(nn.Module):
 
         # 对话级输入：所有模态在时间维上先展平为 (B*T, ...)，编码后再折回 (B,T,D)。
         seq_shape = None
+        video_frame_pool = 1
+        video_pool_batch = None
         if sequence_mask is not None:
             if not self.use_emotion_shift:
                 raise ValueError("sequence_mask is supported by the emotion_shift fusion only")
@@ -223,15 +227,37 @@ class MultimodalEmotionModel(nn.Module):
             text_input_ids = _flat(text_input_ids)
             text_attention_mask = _flat(text_attention_mask)
 
+        # 对话窗口的视频输入是 (B, T_dialog, F_frames, C, H, W)。VideoFeatureExtractor
+        # 把 5D 输入按“帧序列”处理并保留帧维，若直接交给它，F 会被折进特征维
+        # （512*4=2048），与其它模态的 512 不匹配。这里把帧维并进批次维，
+        # 编码后再对 F 取均值，得到与非时序路径一致的 (B*T_dialog, output_dim)。
+        # 视频输入为 (N, F_frames, C, H, W)：VideoFeatureExtractor 会把 5D 当“帧序列”
+        # 并保留帧维，若直接交给它，F 会被折进特征维（512*4=2048）或被当成时间步
+        # （非时序路径会得到 (B,4,7) 的 logits）。这里统一把帧维并进批次维，
+        # 编码后对 F 取均值，两条路径都得到每话轮一个 (output_dim) 向量。
+        if video is not None and video.dim() == 5:
+            Ns, Fs, Cs, Hs, Ws = video.shape
+            video = video.reshape(Ns * Fs, Cs, Hs, Ws)
+            video_frame_pool = Fs
+            video_pool_batch = Ns
+
         batch_size = self._infer_batch_size(
             video, audio, physiological, text_input_ids, audio_precomputed
         )
+        if video_pool_batch is not None:
+            # 视频已把帧维并进批次维，推断出的 batch 是 N*F，会使零特征长度不符。
+            batch_size = video_pool_batch
+        elif seq_shape is not None:
+            batch_size = seq_shape[0] * seq_shape[1]
         active_mask = self._build_active_mask(
             video, audio, physiological, text_input_ids, audio_precomputed
         )
 
         if self.use_video and video is not None:
-            features['video'] = self.video_extractor(video)
+            _vfeat = self.video_extractor(video)
+            if video_frame_pool > 1 and _vfeat.dim() == 2:
+                _vfeat = _vfeat.reshape(-1, video_frame_pool, _vfeat.size(-1)).mean(dim=1)
+            features['video'] = _vfeat
         else:
             features['video'] = self._zero_feature(
                 batch_size, self.config['model']['video']['output_dim'], device
@@ -267,6 +293,8 @@ class MultimodalEmotionModel(nn.Module):
                     features[_name] = _feat.reshape(B, T, -1)
 
         # 多模态融合（根据策略选择不同的融合方法）
+        if __import__("os").environ.get("DSH_DEBUG_SHAPES"):
+            print("FEATURES", {k: tuple(v.shape) for k, v in features.items() if v is not None})
         if self.use_emotion_shift:
             # 情感转变感知融合
             fused_features, emotion_logits_shift, shift_weights = self.fusion_module(
