@@ -582,13 +582,20 @@ def train_epoch(
     accum = max(1, int(training.get("gradient_accumulation_steps", 1)))
     grad_clip = float(training.get("gradient_clip", 1.0))
     use_domain = bool(training.get("loss", {}).get("use_domain_adaptation", False))
+    # 受控消融开关：G2（有状态编码、无跨窗状态继承）与 G3（完整 ESF）之间
+    # 只应差这一个变量，因此把它从配置读出，而不是硬编码。
+    use_prev_emotions = bool(
+        config.get("data", {}).get("temporal", {}).get("use_previous_emotions", True)
+    )
 
     running = defaultdict(float)
     count = 0
     optimizer.zero_grad(set_to_none=True)
 
     for step, batch in enumerate(loader):
-        inputs = _batch_to_model_inputs(batch, device, config, use_prev_labels=True)
+        inputs = _batch_to_model_inputs(
+            batch, device, config, use_prev_labels=use_prev_emotions
+        )
         inputs = _apply_modality_dropout(inputs, config)
         targets = _batch_targets(batch, device)
 
