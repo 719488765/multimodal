@@ -56,6 +56,14 @@ def build(base: dict, arm: str, strategy: str, temporal: bool, use_prev, leader,
     tr["seed"] = 42
     tr["num_epochs"] = epochs
     tr["batch_size"] = 1
+    # 收敛判据：不同融合路径的收敛速度差异很大，按“相同轮数”比较会误判。
+    # 统一改为按验证集 Macro-F1 是否仍在提升来停止（上限 epochs 轮）。
+    tr["early_stopping"] = {
+        "enabled": True,
+        "monitor": "val_f1",
+        "patience": 3,
+        "min_delta": 0.005,
+    }
     for mode in ("pretrain", "finetune"):
         block = tr.setdefault(mode, {})
         block["enabled"] = mode == "finetune"

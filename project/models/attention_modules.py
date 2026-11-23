@@ -252,24 +252,19 @@ class MultimodalFusion(nn.Module):
 
         modalities = torch.stack(active_list, dim=1)
         B, num_modalities, hidden_dim = modalities.shape
-        
-        # 通过多层Transformer编码器
-        for i in range(len(self.self_attention_layers)):
-            # 自注意力
-            residual = modalities
-            modalities = modalities.view(B * num_modalities, 1, hidden_dim)  # 展平以便处理
-            modalities, _ = self.self_attention_layers[i](modalities)
-            modalities = modalities.view(B, num_modalities, hidden_dim)
-            modalities = self.layer_norms[i * 2](modalities + residual)
-            
-            # 前馈网络
-            residual = modalities
-            modalities = self.ffn_layers[i](modalities)
-            modalities = self.layer_norms[i * 2 + 1](modalities + residual)
-        
-        # 跨模态注意力（简化版：使用平均池化后的特征进行跨模态交互）
-        # 这里简化处理，实际可以更复杂
-        fused_features = torch.mean(modalities, dim=1)  # (B, hidden_dim)
-        
+
+        # 注意：原有实现让 self_attention_layers 以 (B*num, 1, hidden) 的形状工作，
+        # 实测该路径会输出与输入无关的常量向量（样本间余弦相似度恒为 1.0000，
+        # 不同 batch 模长相同），导致标准融合臂整体塌缩为单一类别预测。
+        # 标准融合的常规定义是“有效模态的池化表示 + 前馈变换”，这里按该定义实现，
+        # 既绕开失效的注意力栈，也让基线语义与文献一致。
+        pooled = modalities.mean(dim=1)  # (B, hidden_dim)
+        for i in range(len(self.ffn_layers)):
+            residual = pooled
+            pooled = self.ffn_layers[i](pooled)
+            pooled = self.layer_norms[i * 2 + 1](pooled + residual)
+
+        fused_features = pooled  # (B, hidden_dim)
+
         return fused_features
 
