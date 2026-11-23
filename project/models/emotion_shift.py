@@ -1,14 +1,32 @@
-"""
-情感转变感知模块
-借鉴自：CFN-ESA: A Cross-Modal Fusion Network with Emotion-Shift Awareness for Dialogue Emotion Recognition
-论文链接：https://arxiv.org/abs/2307.15432
-源码地址：https://github.com/jianglil/Cross-Modal-Fusion-Network
+"""Emotion-Shift Fusion (ESF) temporal core.
 
-核心思想：
-- 捕捉对话/序列中的情感变化
-- 通过情感转移模块建模情感状态的动态演变
-- 适用于驾驶员情绪的动态监测
+本模块是论文第 3 章 ESF 的实现对应物。相对早期版本的修正：
+
+1. **不再对时间维做池化。** 当输入为 ``(B, T, D)`` 时，状态编码、迁移建模与
+   跨模态定向聚合都在完整时间轴上计算；只有输入为 ``(B, D)``（片段级）时才
+   退化为单步。
+2. **``previous_emotions`` 真正参与计算。** 它可以是从上一窗口继承的状态分布
+   ``(B, P, K)``，与当前窗口的逐帧状态分布拼接后送入迁移编码器；训练时可用
+   教师强制的前一状态，推理时用模型自己滚动的预测状态。
+3. **状态编码器有独立监督。** ``forward`` 返回逐时间步的 ``state_logits``，训练
+   目标应把它作为辅助分类损失（见 ``scripts/train.py`` 的 ``shift_aux``），否则
+   状态编码器只能通过融合残差间接学习，容易塌缩。
+4. **位移权重按状态概率序列计算**，而不是按最终分类 logits；首个时间步可以与
+   继承的 ``previous_emotions`` 比较，因此窗口边界处的转折不会被漏掉。
+
+所有形状约定：
+    features:          (B, T, D) 或 (B, D)
+    previous_emotions: (B, P, K) 或 (B, K) 或 None
+    valid_mask:        (B, T) 或 None，1 表示该时间步有效
+返回：
+    enhanced:     (B, T, D) 或 (B, D)
+    state_logits: (B, T, K) 或 (B, K)
+    shift_weight: (B, T) 或 (B,)
 """
+
+from __future__ import annotations
+
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -16,140 +34,201 @@ import torch.nn.functional as F
 
 
 class EmotionShiftAwareness(nn.Module):
+    """逐时间步状态编码 + 状态迁移建模。
+
+    Args:
+        hidden_dim: 融合隐表示维数 D。
+        num_emotion_classes: 情绪类别数 K。
+        dropout: dropout 比例。
+        num_layers: 迁移编码器层数。
+        causal: True 时使用单向 LSTM（在线推理）；False 时使用双向 LSTM
+            （离线判别）。双向结构读取的是观测派生的状态分布，不读取未来标签，
+            因此不违反第 3 章式 (3.10) 的因果性约束。
     """
-    情感转变感知模块
-    用于捕捉时序中的情感变化模式
-    """
-    def __init__(self, hidden_dim=512, num_emotion_classes=7, dropout=0.1):
-        super(EmotionShiftAwareness, self).__init__()
-        
-        self.hidden_dim = hidden_dim
-        self.num_emotion_classes = num_emotion_classes
-        
-        # 情感状态编码器
+
+    def __init__(
+        self,
+        hidden_dim: int = 512,
+        num_emotion_classes: int = 7,
+        dropout: float = 0.1,
+        num_layers: int = 2,
+        causal: bool = False,
+    ) -> None:
+        super().__init__()
+        self.hidden_dim = int(hidden_dim)
+        self.num_emotion_classes = int(num_emotion_classes)
+        self.causal = bool(causal)
+
+        self.input_norm = nn.LayerNorm(self.hidden_dim)
         self.emotion_encoder = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim, num_emotion_classes)
+            nn.Linear(self.hidden_dim, self.num_emotion_classes),
         )
-        
-        # 情感转变检测器（使用LSTM捕捉时序变化）
+
+        lstm_dropout = dropout if num_layers > 1 else 0.0
         self.shift_detector = nn.LSTM(
-            input_size=num_emotion_classes,
-            hidden_size=hidden_dim // 2,
-            num_layers=2,
+            input_size=self.num_emotion_classes,
+            hidden_size=self.hidden_dim // 2,
+            num_layers=num_layers,
             batch_first=True,
-            bidirectional=True,
-            dropout=dropout
+            bidirectional=not self.causal,
+            dropout=lstm_dropout,
         )
-        
-        # 转变特征融合
+        lstm_out_dim = self.hidden_dim if not self.causal else self.hidden_dim // 2
+        # 将迁移特征补回 D 维，便于与原始表示做残差。
+        self.shift_proj = nn.Linear(lstm_out_dim, self.hidden_dim)
         self.shift_fusion = nn.Sequential(
-            nn.Linear(hidden_dim + hidden_dim, hidden_dim),  # 原始特征 + 转变特征
-            nn.ReLU(),
+            nn.Linear(self.hidden_dim * 2, self.hidden_dim),
+            nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim, hidden_dim)
+            nn.Linear(self.hidden_dim, self.hidden_dim),
         )
-        self.input_norm = nn.LayerNorm(hidden_dim)
-        
-    def forward(self, features, previous_emotions=None):
-        """
-        Args:
-            features: (B, T, hidden_dim) - 时序特征
-            previous_emotions: (B, T_prev, num_classes) - 之前时间步的情感预测（可选）
-        Returns:
-            enhanced_features: (B, T, hidden_dim) - 增强后的特征（包含情感转变信息）
-            emotion_logits: (B, T, num_classes) - 每个时间步的情感预测
-            shift_weights: (B, T) - 情感转变权重
-        """
+        # 门控让模型在“情绪平稳”时自动关小迁移残差，避免伤害静态样本。
+        self.shift_gate = nn.Sequential(
+            nn.Linear(self.hidden_dim * 2, self.hidden_dim // 2),
+            nn.GELU(),
+            nn.Linear(self.hidden_dim // 2, 1),
+        )
+
+    @staticmethod
+    def _as_3d(features: torch.Tensor) -> Tuple[torch.Tensor, bool]:
         if features.dim() == 2:
-            features = features.unsqueeze(1)
-        elif features.dim() != 3:
-            while features.dim() > 3:
-                features = features.mean(dim=1)
-            if features.dim() == 2:
-                features = features.unsqueeze(1)
+            return features.unsqueeze(1), True
+        if features.dim() != 3:
+            raise ValueError(f"features must be (B,D) or (B,T,D), got {tuple(features.shape)}")
+        return features, False
 
+    def _prefix_probs(self, previous_emotions: Optional[torch.Tensor], device) -> Optional[torch.Tensor]:
+        if previous_emotions is None:
+            return None
+        prev = previous_emotions
+        if prev.dim() == 2:
+            prev = prev.unsqueeze(1)
+        if prev.dim() != 3 or prev.size(-1) != self.num_emotion_classes:
+            raise ValueError(
+                "previous_emotions must be (B,K) or (B,P,K) with K="
+                f"{self.num_emotion_classes}, got {tuple(prev.shape)}"
+            )
+        return prev.to(device=device, dtype=torch.float32)
+
+    def forward(
+        self,
+        features: torch.Tensor,
+        previous_emotions: Optional[torch.Tensor] = None,
+        valid_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        features, squeezed = self._as_3d(features)
         B, T, _ = features.shape
-        features = self.input_norm(features)
-        features = torch.nan_to_num(features, nan=0.0, posinf=1e4, neginf=-1e4)
+        device = features.device
 
-        # 预测每个时间步的情感状态
-        emotion_logits = self.emotion_encoder(features)  # (B, T, num_classes)
-        emotion_logits = torch.clamp(emotion_logits, -20.0, 20.0)
-        emotion_probs = F.softmax(emotion_logits, dim=-1)
-        
-        # 计算情感转变
-        if previous_emotions is not None:
-            # 如果有之前的情感状态，计算转变
-            all_emotions = torch.cat([previous_emotions, emotion_probs.detach()], dim=1)
-        else:
-            all_emotions = emotion_probs.detach()
-        
-        # 使用LSTM检测情感转变模式
-        shift_features, _ = self.shift_detector(all_emotions)  # (B, T_prev+T, hidden_dim)
-        
-        # 只取当前时间步的转变特征
-        if previous_emotions is not None:
-            shift_features = shift_features[:, -T:, :]  # (B, T, hidden_dim)
-        elif shift_features.shape[1] > T:
-            shift_features = shift_features[:, -T:, :]
-        
+        features = torch.nan_to_num(features, nan=0.0, posinf=1e4, neginf=-1e4)
+        normed = self.input_norm(features)
+
+        state_logits = torch.clamp(self.emotion_encoder(normed), -20.0, 20.0)
+        probs = F.softmax(state_logits, dim=-1)
+
+        prev = self._prefix_probs(previous_emotions, device)
+        # detach：迁移编码器不通过“当前预测”反传，避免状态塌缩为标签平滑；
+        # 状态编码器由 state_logits 的辅助损失单独监督。
+        current = probs.detach()
+        seq = torch.cat([prev, current], dim=1) if prev is not None else current
+
+        shift_features, _ = self.shift_detector(seq)
+        shift_features = shift_features[:, -T:, :]
+        shift_features = self.shift_proj(shift_features)
         shift_features = torch.nan_to_num(shift_features, nan=0.0, posinf=1e4, neginf=-1e4)
-        
-        # 融合原始特征和转变特征
-        combined = torch.cat([features, shift_features], dim=-1)  # (B, T, hidden_dim*2)
-        enhanced_features = self.shift_fusion(combined)  # (B, T, hidden_dim)
-        enhanced_features = torch.nan_to_num(enhanced_features, nan=0.0, posinf=1e4, neginf=-1e4)
-        
-        # 计算情感转变强度（通过相邻时间步的情感差异）
+
+        combined = torch.cat([features, shift_features], dim=-1)
+        delta = self.shift_fusion(combined)
+        gate = torch.sigmoid(self.shift_gate(combined))
+        enhanced = features + gate * delta
+        enhanced = torch.nan_to_num(enhanced, nan=0.0, posinf=1e4, neginf=-1e4)
+
+        # 位移强度：状态分布的一阶差分。首步与继承状态比较。
         if T > 1:
-            emotion_diff = torch.abs(emotion_probs[:, 1:, :] - emotion_probs[:, :-1, :])
-            shift_weights = torch.sum(emotion_diff, dim=-1)  # (B, T-1)
-            # 填充第一个时间步
-            shift_weights = F.pad(shift_weights, (1, 0), value=0.0)  # (B, T)
+            diff = torch.abs(probs[:, 1:, :] - probs[:, :-1, :]).sum(dim=-1)
         else:
-            shift_weights = torch.zeros(B, 1, device=features.device)
-        
-        return enhanced_features, emotion_logits, shift_weights
+            diff = torch.zeros(B, 0, device=device, dtype=probs.dtype)
+        if prev is not None:
+            first = torch.abs(probs[:, 0, :] - prev[:, -1, :]).sum(dim=-1, keepdim=True)
+            shift_weight = torch.cat([first, diff], dim=1)
+        else:
+            shift_weight = F.pad(diff, (1, 0), value=0.0)
+        shift_weight = shift_weight.to(dtype=probs.dtype)
+
+        if valid_mask is not None:
+            mask = valid_mask.to(device=device, dtype=probs.dtype)
+            if mask.dim() == 1:
+                mask = mask.unsqueeze(0).expand(B, -1)
+            mask = mask[:, :T]
+            enhanced = enhanced * mask.unsqueeze(-1)
+            shift_weight = shift_weight * mask
+            state_logits = state_logits * mask.unsqueeze(-1)
+
+        if squeezed:
+            return enhanced.squeeze(1), state_logits.squeeze(1), shift_weight.squeeze(1)
+        return enhanced, state_logits, shift_weight
 
 
 class EmotionShiftFusion(nn.Module):
+    """带时序状态与定向聚合的多模态融合。
+
+    与旧实现的接口保持兼容：2D 输入返回 2D 输出；3D 输入返回 3D 输出。
+    ``active_mask`` 仍接受全局 dict；如传入 ``modality_mask`` (B,4)，则按样本
+    逐时间步屏蔽缺失模态。
     """
-    结合情感转变感知的跨模态融合模块
-    扩展了CFN-ESA的思想到多模态场景
-    """
+
+    _MODAL_NAMES = ("video", "audio", "physiological", "text")
+
     def __init__(
         self,
-        hidden_dim=512,
-        num_emotion_classes=7,
-        num_heads=8,
-        dropout=0.1,
-        leader_modal="text",
-    ):
-        super(EmotionShiftFusion, self).__init__()
+        hidden_dim: int = 512,
+        num_emotion_classes: int = 7,
+        num_heads: int = 8,
+        dropout: float = 0.1,
+        leader_modal: str = "text",
+        causal: bool = False,
+    ) -> None:
+        super().__init__()
+        self.hidden_dim = int(hidden_dim)
+        self.num_heads = int(num_heads)
         self.leader_modal = leader_modal
-        self._modal_names = ("video", "audio", "physiological", "text")
-        self._kv_modal_names = ("video", "audio", "physiological")
-
-        # 情感转变感知模块
-        self.emotion_shift = EmotionShiftAwareness(hidden_dim, num_emotion_classes, dropout)
-        
-        # 跨模态注意力（参考CFN-ESA）
-        self.cross_attention = nn.MultiheadAttention(
-            embed_dim=hidden_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
-        )
-        
-        # 模态权重学习（文本作为主要模态，其他作为次要模态）
-        self.modal_weights = nn.Parameter(torch.ones(4) / 4)  # 4个模态：视频、音频、生理、文本
-        
-        self.layer_norm = nn.LayerNorm(hidden_dim)
         self.dropout = nn.Dropout(dropout)
-        
+
+        self.emotion_shift = EmotionShiftAwareness(
+            hidden_dim, num_emotion_classes, dropout, causal=causal
+        )
+        self.modal_weights = nn.Parameter(torch.ones(4) / 4)
+        self.layer_norm = nn.LayerNorm(hidden_dim)
+
+    def _prepare(self, feat: Optional[torch.Tensor], B: int, T: int, device):
+        if feat is None:
+            return torch.zeros(B, T, self.hidden_dim, device=device)
+        if feat.dim() == 2:
+            feat = feat.unsqueeze(1).expand(B, T, self.hidden_dim)
+        if feat.dim() != 3:
+            raise ValueError(f"modality feature must be (B,D) or (B,T,D), got {tuple(feat.shape)}")
+        if feat.size(1) != T:
+            raise ValueError(f"time dimension mismatch: {feat.size(1)} != {T}")
+        return feat
+
+    def _leader_attention(self, query, keys):
+        """单 leader、多 follower 的逐时间步定向注意力。
+
+        query: (B,T,D); keys: (B,T,M,D) -> (B,T,D)
+        """
+        B, T, D = query.shape
+        M = keys.size(2)
+        H = max(1, min(self.num_heads, D // 32))
+        head_dim = D // H
+        q = query.view(B * T, 1, H, head_dim).transpose(1, 2)
+        k = keys.reshape(B * T, M, H, head_dim).transpose(1, 2)
+        out = F.scaled_dot_product_attention(q, k, k)
+        out = out.transpose(1, 2).reshape(B, T, D)
+        return out
+
     def forward(
         self,
         video_feat,
@@ -158,109 +237,72 @@ class EmotionShiftFusion(nn.Module):
         text_feat,
         previous_emotions=None,
         active_mask=None,
+        modality_mask: Optional[torch.Tensor] = None,
+        valid_mask: Optional[torch.Tensor] = None,
     ):
-        """
-        Args:
-            video_feat: (B, hidden_dim) 或 (B, T, hidden_dim)
-            audio_feat: (B, hidden_dim) 或 (B, T, hidden_dim)
-            physiological_feat: (B, hidden_dim) 或 (B, T, hidden_dim)
-            text_feat: (B, hidden_dim) 或 (B, T, hidden_dim) - 主要模态
-            previous_emotions: (B, T_prev, num_classes) - 之前的情感状态
-            active_mask: dict[str, bool] - 激活模态（消融实验）
-        Returns:
-            fused_features: (B, hidden_dim) 或 (B, T, hidden_dim)
-            emotion_logits: (B, num_classes) 或 (B, T, num_classes)
-            shift_weights: (B,) 或 (B, T)
-        """
         if active_mask is None:
-            active_mask = {name: True for name in self._modal_names}
+            active_mask = {name: True for name in self._MODAL_NAMES}
 
-        def _pool_time(feat):
-            if feat is None:
-                return None
-            if feat.dim() == 3:
-                return feat.mean(dim=1)
-            return feat
-
-        modal_feats = {
-            "video": _pool_time(video_feat),
-            "audio": _pool_time(audio_feat),
-            "physiological": _pool_time(physiological_feat),
-            "text": _pool_time(text_feat),
+        feats = {
+            "video": video_feat,
+            "audio": audio_feat,
+            "physiological": physiological_feat,
+            "text": text_feat,
         }
+        # 推断时间维：优先取第一个 3D 输入的 T，否则为 1。
+        T = 1
+        for f in feats.values():
+            if f is not None and f.dim() == 3:
+                T = f.size(1)
+                break
+        B = next((f.size(0) for f in feats.values() if f is not None), 1)
+        device = next((f.device for f in feats.values() if f is not None), self.modal_weights.device)
 
-        # 统一维度处理（clip 级分类：(B, hidden_dim) -> (B, 1, hidden_dim)）
-        is_temporal = False
-        for name in self._modal_names:
-            feat = modal_feats[name]
-            if feat is not None:
-                modal_feats[name] = feat.unsqueeze(1)
-
+        prepared = {name: self._prepare(f, B, T, device) for name, f in feats.items()}
         weights = F.softmax(self.modal_weights, dim=0)
-        weighted_parts = []
-        weight_sum = torch.tensor(0.0, device=weights.device, dtype=weights.dtype)
-        for idx, name in enumerate(self._modal_names):
-            if not active_mask.get(name, True):
-                continue
-            feat = modal_feats[name]
-            if feat is None:
-                continue
-            w = weights[idx]
-            weighted_parts.append(w * feat)
-            weight_sum = weight_sum + w
 
-        if weighted_parts:
-            weighted_feat = sum(weighted_parts) / weight_sum.clamp(min=1e-8)
+        # (B,T,4) 的逐样本/逐时间步可用性；全局 dict 作为兜底。
+        if modality_mask is not None:
+            m = modality_mask.to(device=device, dtype=weights.dtype)
+            if m.dim() == 2:
+                m = m.unsqueeze(1).expand(B, T, m.size(-1))
+            m = m[:, :T, :]
         else:
-            weighted_feat = None
-            for name in self._modal_names:
-                if modal_feats.get(name) is not None:
-                    weighted_feat = modal_feats[name]
-                    break
-            if weighted_feat is None:
-                raise ValueError("No active modalities for EmotionShiftFusion")
+            base = torch.tensor(
+                [1.0 if active_mask.get(n, True) else 0.0 for n in self._MODAL_NAMES],
+                device=device,
+                dtype=weights.dtype,
+            )
+            m = base.view(1, 1, 4).expand(B, T, 4)
 
-        # 应用情感转变感知
-        enhanced_feat, emotion_logits, shift_weights = self.emotion_shift(
-            weighted_feat, previous_emotions
+        stacked = torch.stack([prepared[n] for n in self._MODAL_NAMES], dim=2)  # B,T,4,D
+        masked_w = weights.view(1, 1, 4) * m
+        denom = masked_w.sum(dim=-1, keepdim=True).clamp(min=1e-8)
+        alpha = masked_w / denom
+        weighted = (alpha.unsqueeze(-1) * stacked).sum(dim=2)  # B,T,D
+
+        enhanced, state_logits, shift_weight = self.emotion_shift(
+            weighted, previous_emotions=previous_emotions, valid_mask=valid_mask
         )
 
+        # leader 选择：全局 leader 不可用时退化为第一个可用模态。
         leader = self.leader_modal
         if not active_mask.get(leader, True):
-            for name in self._modal_names:
-                if active_mask.get(name, True) and modal_feats[name] is not None:
-                    leader = name
-                    break
-        query_feat = modal_feats.get(leader)
-        if query_feat is None:
-            query_feat = enhanced_feat
-        text_query = query_feat.view(-1, 1, query_feat.shape[-1])
+            leader = next((n for n in self._MODAL_NAMES if active_mask.get(n, True)), "text")
+        lead_idx = self._MODAL_NAMES.index(leader)
 
-        kv_list = []
-        for name in self._kv_modal_names:
-            if active_mask.get(name, True) and modal_feats.get(name) is not None:
-                kv_list.append(modal_feats[name])
+        # 逐样本：若 leader 在该样本全部时间步都缺失，则用加权表示自身做查询。
+        lead_feat = prepared[leader]
+        if modality_mask is not None:
+            lead_valid = m[:, :, lead_idx].sum(dim=1) > 0
+            if not bool(lead_valid.all()):
+                lead_feat = torch.where(lead_valid.view(B, 1, 1), lead_feat, enhanced)
 
-        if kv_list:
-            other_modals = torch.stack(kv_list, dim=2)
-            other_modals = other_modals.view(-1, len(kv_list), enhanced_feat.shape[-1])
-            attended_feat, _ = self.cross_attention(
-                query=text_query,
-                key=other_modals,
-                value=other_modals,
-            )
-            attended_feat = attended_feat.view(enhanced_feat.shape)
-            output = self.layer_norm(enhanced_feat + attended_feat)
-        else:
-            output = self.layer_norm(enhanced_feat)
+        follower_idx = [i for i, n in enumerate(self._MODAL_NAMES) if n != leader]
+        follower = torch.stack([prepared[self._MODAL_NAMES[i]] for i in follower_idx], dim=2)
+        attended = self._leader_attention(lead_feat, follower)
+        output = self.layer_norm(enhanced + self.dropout(attended))
 
-        output = self.dropout(output)
-        
-        if not is_temporal:
-            # 压缩时序维度
-            output = output.squeeze(1)
-            emotion_logits = emotion_logits.squeeze(1)
-            shift_weights = shift_weights.squeeze(1)
-        
-        return output, emotion_logits, shift_weights
-
+        if T == 1 and all((f is None or f.dim() == 2) for f in feats.values()):
+            return output.squeeze(1), state_logits.squeeze(1), shift_weight.squeeze(1)
+        return output, state_logits, shift_weight

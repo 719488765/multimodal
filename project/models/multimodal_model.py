@@ -174,7 +174,8 @@ class MultimodalEmotionModel(nn.Module):
     def forward(self, video=None, audio=None, physiological=None, text=None,
                 text_input_ids=None, text_attention_mask=None, previous_emotions=None,
                 audio_precomputed=None, dataset_ids=None, context_text_input_ids=None,
-                context_text_attention_mask=None, return_fmc_loss=False, return_domain_logits=False, **kwargs):
+                context_text_attention_mask=None, sequence_mask=None,
+                return_fmc_loss=False, return_domain_logits=False, **kwargs):
         """
         前向传播
         
@@ -199,6 +200,29 @@ class MultimodalEmotionModel(nn.Module):
         # 特征提取
         features = {}
         device = next(self.parameters()).device
+
+        # 对话级输入：所有模态在时间维上先展平为 (B*T, ...)，编码后再折回 (B,T,D)。
+        seq_shape = None
+        if sequence_mask is not None:
+            if not self.use_emotion_shift:
+                raise ValueError("sequence_mask is supported by the emotion_shift fusion only")
+            seq_shape = tuple(sequence_mask.shape)
+            B, T = seq_shape
+
+            def _flat(x):
+                if x is None:
+                    return None
+                if x.dim() < 3:
+                    return x
+                return x.reshape(B * T, *x.shape[2:])
+
+            video = _flat(video)
+            audio = _flat(audio)
+            audio_precomputed = _flat(audio_precomputed)
+            physiological = _flat(physiological)
+            text_input_ids = _flat(text_input_ids)
+            text_attention_mask = _flat(text_attention_mask)
+
         batch_size = self._infer_batch_size(
             video, audio, physiological, text_input_ids, audio_precomputed
         )
@@ -235,7 +259,13 @@ class MultimodalEmotionModel(nn.Module):
             features['text'] = self._zero_feature(
                 batch_size, self.config['model']['text']['output_dim'], device
             )
-        
+
+        if seq_shape is not None:
+            B, T = seq_shape
+            for _name, _feat in list(features.items()):
+                if _feat is not None:
+                    features[_name] = _feat.reshape(B, T, -1)
+
         # 多模态融合（根据策略选择不同的融合方法）
         if self.use_emotion_shift:
             # 情感转变感知融合
@@ -246,6 +276,7 @@ class MultimodalEmotionModel(nn.Module):
                 features['text'],
                 previous_emotions=previous_emotions,
                 active_mask=active_mask,
+                valid_mask=sequence_mask,
             )
         else:
             # 标准融合、领导-跟随或两阶段融合
@@ -278,6 +309,9 @@ class MultimodalEmotionModel(nn.Module):
         # 添加情感转变权重（如果使用情感转变感知）
         if shift_weights is not None:
             outputs['shift_weights'] = shift_weights
+        # 逐时间步状态 logits：供辅助监督使用（否则状态编码器无梯度）。
+        if emotion_logits_shift is not None:
+            outputs['shift_logits'] = emotion_logits_shift
         
         # 情绪趋势预测（如果启用）
         if self.trend_predictor is not None:

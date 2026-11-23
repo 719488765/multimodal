@@ -25,6 +25,11 @@ if str(ROOT) not in sys.path:
 
 from data.collate import multimodal_collate_fn
 from data.dataset import MultimodalDataset
+from data.dialogue_sequences import (
+    DialogueSequenceDataset,
+    build_meld_dialogue_key,
+    sequence_collate_fn,
+)
 from models.balanced_loss import ClassBalancedLoss, FocalLoss
 from models.multimodal_model import MultimodalEmotionModel
 from utils.helpers import (
@@ -314,6 +319,8 @@ class MultimodalLoss(nn.Module):
         self.use_domain = bool(loss_cfg.get("use_domain_adaptation", False))
         self.domain_weight = float(loss_cfg.get("domain_loss_weight", 0.1))
         self.label_smoothing = float(loss_cfg.get("label_smoothing", 0.0))
+        # 状态编码器的辅助监督：把逐时间步 state_logits 也作为分类目标。
+        self.w_shift = float(loss_cfg.get("shift_aux_weight", 0.5))
 
         num_classes = int(
             self.config.get("model", {}).get("output", {}).get("emotion_classes", 7)
@@ -363,10 +370,51 @@ class MultimodalLoss(nn.Module):
 
         logits = torch.nan_to_num(logits, nan=0.0, posinf=1e4, neginf=-1e4)
         labels = targets["emotion_label"]
+        label_mask = targets.get("label_mask")
+        if label_mask is None and labels.dim() == 3:
+            label_mask = torch.ones(labels.shape[:2], device=labels.device)
+
+        def _flatten_valid(t: torch.Tensor, target_dtype=None):
+            if t.dim() == 3:
+                k = t.size(-1)
+                t = t.reshape(-1, k)
+                if label_mask is not None:
+                    m = label_mask.reshape(-1) > 0
+                    t = t[m]
+                    if target_dtype is not None:
+                        lbl = labels.reshape(-1)[m]
+                        return t, lbl
+                    return t
+            if target_dtype is not None:
+                return t, labels
+            return t
+
+        if logits.dim() == 3:
+            logits, labels = _flatten_valid(logits, torch.long)
+        if logits.numel() == 0:
+            zero = torch.tensor(0.0, device=logits.device)
+            return zero, {"cls_loss": 0.0, "reg_loss": 0.0, "domain_loss": 0.0, "trend_loss": 0.0, "shift_loss": 0.0}
 
         cls_loss = self._classification_loss(logits, labels)
         with torch.no_grad():
             cls_ce_unweighted = F.cross_entropy(logits, labels, reduction="mean").item()
+
+        # 状态编码器辅助损失：逐时间步状态分布的分类监督。
+        shift_loss = torch.tensor(0.0, device=logits.device)
+        shift_logits = outputs.get("shift_logits")
+        if shift_logits is not None and self.w_shift > 0:
+            if shift_logits.dim() == 3:
+                sl = shift_logits.reshape(-1, shift_logits.size(-1))
+                if label_mask is not None:
+                    m = label_mask.reshape(-1) > 0
+                    sl = sl[m]
+                    sy = labels if labels.dim() == 1 else targets["emotion_label"].reshape(-1)[m]
+                else:
+                    sy = targets["emotion_label"].reshape(-1)
+                if sl.numel() > 0:
+                    shift_loss = F.cross_entropy(
+                        torch.nan_to_num(sl, nan=0.0, posinf=1e4, neginf=-1e4), sy
+                    )
 
         reg_loss = torch.tensor(0.0, device=logits.device)
         if self.w_reg > 0 and "emotion_dimensions" in outputs and "emotion_dimensions" in targets:
@@ -395,6 +443,7 @@ class MultimodalLoss(nn.Module):
             + self.w_reg * reg_loss
             + self.w_trend * trend_loss
             + self.domain_weight * domain_loss
+            + self.w_shift * shift_loss
         )
 
         breakdown = {
@@ -402,6 +451,7 @@ class MultimodalLoss(nn.Module):
             "reg_loss": float(reg_loss.detach().item()),
             "trend_loss": float(trend_loss.detach().item()),
             "domain_loss": float(domain_loss.detach().item()),
+            "shift_loss": float(shift_loss.detach().item()),
             "cls_ce_unweighted": float(cls_ce_unweighted),
         }
         return total, breakdown
@@ -412,7 +462,8 @@ class MultimodalLoss(nn.Module):
 # ---------------------------------------------------------------------------
 
 
-def _batch_to_model_inputs(batch: dict, device: torch.device) -> dict:
+def _batch_to_model_inputs(batch: dict, device: torch.device, config: dict | None = None,
+                           use_prev_labels: bool = False) -> dict:
     inputs: dict = {}
     for key in (
         "video",
@@ -432,6 +483,23 @@ def _batch_to_model_inputs(batch: dict, device: torch.device) -> dict:
     if batch.get("dataset_id") is not None:
         inputs["dataset_ids"] = batch["dataset_id"].to(device)
 
+    # 对话级：把 (B,T) 的标签右移一位作为“前一状态”，训练时可用教师强制，
+    # 评估时置 None，避免使用真实前序标签。
+    if batch.get("sequence_mask") is not None:
+        inputs["sequence_mask"] = batch["sequence_mask"].to(device)
+        if use_prev_labels:
+            labels = batch["emotion_label"].to(device)
+            k = int(
+                (config or {}).get("model", {}).get("output", {}).get("emotion_classes", 7)
+            )
+            b, t = labels.shape
+            eye = F.one_hot(labels.clamp(min=0), num_classes=k).float()
+            uniform = torch.full((b, 1, k), 1.0 / k, device=device)
+            prev = torch.cat([uniform, eye[:, :-1]], dim=1)
+            drop = (torch.rand(b, 1, device=device) < 0.3).unsqueeze(-1)
+            prev = torch.where(drop, uniform.expand_as(prev), prev)
+            inputs["previous_emotions"] = prev
+
     return inputs
 
 
@@ -442,6 +510,8 @@ def _batch_targets(batch: dict, device: torch.device) -> dict:
     }
     if batch.get("dataset_id") is not None:
         targets["dataset_id"] = batch["dataset_id"].to(device)
+    if batch.get("sequence_mask") is not None:
+        targets["label_mask"] = batch["sequence_mask"].to(device)
     return targets
 
 
@@ -518,7 +588,7 @@ def train_epoch(
     optimizer.zero_grad(set_to_none=True)
 
     for step, batch in enumerate(loader):
-        inputs = _batch_to_model_inputs(batch, device)
+        inputs = _batch_to_model_inputs(batch, device, config, use_prev_labels=True)
         inputs = _apply_modality_dropout(inputs, config)
         targets = _batch_targets(batch, device)
 
@@ -566,7 +636,7 @@ def validate(
     all_targets: List[int] = []
 
     for batch in loader:
-        inputs = _batch_to_model_inputs(batch, device)
+        inputs = _batch_to_model_inputs(batch, device, config, use_prev_labels=False)
         targets = _batch_targets(batch, device)
         outputs = model(**inputs, return_domain_logits=use_domain)
         loss, breakdown = criterion(outputs, targets)
@@ -577,8 +647,16 @@ def validate(
         count += 1
 
         preds = outputs["emotion_logits"].argmax(dim=-1)
+        tgts = targets["emotion_label"]
+        if preds.dim() == 2 and targets.get("label_mask") is not None:
+            m = targets["label_mask"].reshape(-1) > 0
+            preds = preds.reshape(-1)[m]
+            tgts = tgts.reshape(-1)[m]
+        else:
+            preds = preds.reshape(-1)
+            tgts = tgts.reshape(-1)
         all_preds.extend(preds.cpu().numpy().tolist())
-        all_targets.extend(targets["emotion_label"].cpu().numpy().tolist())
+        all_targets.extend(tgts.cpu().numpy().tolist())
 
     metrics = {k: v / max(count, 1) for k, v in running.items()}
     cls_metrics = calculate_metrics(predictions=all_preds, targets=all_targets, task="classification")
@@ -695,11 +773,37 @@ def main() -> int:
     train_ds = _subset_by_datasets(train_base, config, mode)
     val_ds = _subset_by_datasets(val_base, config, mode)
 
+    temporal_cfg = config.get("data", {}).get("temporal", {})
+    fusion_strategy = (
+        config.get("model", {}).get("attention", {}).get("fusion_strategy", "standard")
+    )
+    use_sequence = bool(temporal_cfg.get("enabled", False)) and fusion_strategy == "emotion_shift"
+    if use_sequence:
+        window = int(temporal_cfg.get("window", 8))
+        stride = int(temporal_cfg.get("stride", max(1, window // 2)))
+        train_ds = DialogueSequenceDataset(
+            train_ds,
+            window=window,
+            stride=stride,
+            dialogue_key=build_meld_dialogue_key(config, "train"),
+        )
+        val_ds = DialogueSequenceDataset(
+            val_ds,
+            window=window,
+            stride=stride,
+            dialogue_key=build_meld_dialogue_key(config, "val"),
+        )
+        batch_size = int(temporal_cfg.get("batch_size", max(1, batch_size // 4)))
+        print(
+            f"Temporal dialogue mode: window={window} stride={stride} "
+            f"sequence_batch={batch_size} train_windows={len(train_ds)} val_windows={len(val_ds)}"
+        )
+
     dl_kwargs = get_dataloader_kwargs(config, shuffle=False)
-    dl_kwargs["collate_fn"] = multimodal_collate_fn
+    dl_kwargs["collate_fn"] = sequence_collate_fn if use_sequence else multimodal_collate_fn
 
     sampling_cfg = training_cfg.get("sampling", {})
-    if sampling_cfg.get("enabled", False) and len(train_ds) > 0:
+    if sampling_cfg.get("enabled", False) and len(train_ds) > 0 and not use_sequence:
         gen = torch.Generator()
         gen.manual_seed(seed)
         train_sampler = _build_balanced_sampler(
@@ -713,11 +817,11 @@ def main() -> int:
             )
         else:
             train_dl_kwargs = get_dataloader_kwargs(config, shuffle=True)
-            train_dl_kwargs["collate_fn"] = multimodal_collate_fn
+            train_dl_kwargs["collate_fn"] = sequence_collate_fn if use_sequence else multimodal_collate_fn
             train_loader = DataLoader(train_ds, batch_size=batch_size, **train_dl_kwargs)
     else:
         train_dl_kwargs = get_dataloader_kwargs(config, shuffle=True)
-        train_dl_kwargs["collate_fn"] = multimodal_collate_fn
+        train_dl_kwargs["collate_fn"] = sequence_collate_fn if use_sequence else multimodal_collate_fn
         train_loader = DataLoader(train_ds, batch_size=batch_size, **train_dl_kwargs)
 
     val_loader = DataLoader(val_ds, batch_size=batch_size, **dl_kwargs)
@@ -726,7 +830,7 @@ def main() -> int:
     criterion = MultimodalLoss(training_cfg.get("loss_weights", {}), config=config).to(device)
 
     loss_cfg = training_cfg.get("loss", {})
-    if loss_cfg.get("use_fixed_class_balanced_weights", False):
+    if loss_cfg.get("use_fixed_class_balanced_weights", False) and not use_sequence:
         labels = _collect_labels_for_balanced_loss(train_ds, criterion.num_classes)
         if labels and isinstance(criterion.cls_loss_fn, ClassBalancedLoss):
             weights = criterion.cls_loss_fn.compute_class_weights(torch.tensor(labels))
