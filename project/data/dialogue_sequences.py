@@ -39,6 +39,18 @@ def _pad_1d(items: List[torch.Tensor], pad_value: float = 0.0) -> torch.Tensor:
     return pad_sequence(items, batch_first=True, padding_value=pad_value)
 
 
+def _pad_text(items: List[torch.Tensor]) -> torch.Tensor:
+    """文本序列按长度补齐。
+
+    dataset 产出的 ``text_input_ids`` 可能是 ``(L,)`` 也可能是 ``(1, L)``；后者直接
+    送 ``pad_sequence`` 会因为第 1 维长度不同而报错，这里先压掉长度 1 的前导维。
+    """
+    squeezed = [
+        v.squeeze(0) if (v.dim() == 2 and v.size(0) == 1) else v for v in items
+    ]
+    return pad_sequence(squeezed, batch_first=True, padding_value=0)
+
+
 def _stack_step_field(key: str, steps: List[Dict[str, Any]]) -> Optional[torch.Tensor]:
     vals = [s[key] for s in steps if s.get(key) is not None]
     if not vals:
@@ -52,7 +64,7 @@ def _stack_step_field(key: str, steps: List[Dict[str, Any]]) -> Optional[torch.T
     if not torch.is_tensor(first):
         return None
     if key in _TEXT_KEYS or first.dim() == 1:
-        return _pad_1d(vals, pad_value=0)
+        return _pad_text(vals)
     if first.dim() == 2:
         # 预提取特征 (d,) / (L,d) 或音频波形 (L,)
         if all(v.shape == first.shape for v in vals):
@@ -121,6 +133,26 @@ def sequence_collate_fn(batch: List[List[Dict[str, Any]]]) -> Dict[str, Any]:
     return out
 
 
+def _metadata_entries(base: Dataset) -> Optional[List[dict]]:
+    """低成本取出每个样本的元数据字典（含 sample_id），不触发媒体解码。
+
+    `MultimodalDataset.data_list` 已经是 ``[{'sample_id': ..., 'video_path': ...}, ...]``，
+    直接读它可以把窗口构建从「逐样本 __getitem__」降到纯字符串处理；
+    若外层套了 ``Subset`` 则按 indices 取子集。
+    `"""
+    subset = getattr(base, "indices", None)
+    holder = getattr(base, "dataset", base)
+    entries = getattr(holder, "data_list", None)
+    if not entries:
+        return None
+    if subset is not None:
+        try:
+            return [entries[i] for i in subset]
+        except (IndexError, TypeError):
+            return None
+    return list(entries)
+
+
 class DialogueSequenceDataset(Dataset):
     """把逐话轮数据集包装成对话窗口数据集。"""
 
@@ -139,15 +171,30 @@ class DialogueSequenceDataset(Dataset):
         self.stride = max(1, int(stride))
         self._windows: List[List[int]] = []
 
-        keys: List[Optional[str]] = []
-        for i in range(len(base)):
-            sample = base[i]
-            key = None
-            if dialogue_key is not None:
-                key = dialogue_key(sample, i)
-            if key is None:
-                key = sample.get("dialogue_id") if isinstance(sample, dict) else None
-            keys.append(str(key) if key is not None else None)
+        entries = _metadata_entries(base)
+        if entries is not None:
+            keys: List[Optional[str]] = []
+            for i, item in enumerate(entries):
+                key = None
+                if dialogue_key is not None:
+                    key = dialogue_key(item, i)
+                if key is None:
+                    key = item.get("dialogue_id")
+                keys.append(str(key) if key is not None else None)
+            logger.info(
+                "DialogueSequenceDataset: metadata path over %d samples (no media decode)",
+                len(entries),
+            )
+        else:
+            keys = []
+            for i in range(len(base)):
+                sample = base[i]
+                key = None
+                if dialogue_key is not None:
+                    key = dialogue_key(sample, i)
+                if key is None:
+                    key = sample.get("dialogue_id") if isinstance(sample, dict) else None
+                keys.append(str(key) if key is not None else None)
 
         if all(k is not None for k in keys):
             groups: Dict[str, List[int]] = {}
