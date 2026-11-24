@@ -110,6 +110,11 @@ class TwoStageFusion(nn.Module):
             nn.LayerNorm(hidden_dim)
             for _ in range(num_fusion_layers * 2)
         ])
+
+        # 输出归一化：实测该模块的 fused 输出量级仅约 0.18（标准融合约 0.8），
+        # 分类头 logits 因此被偏置项主导、样本间差异极小（std 0.016），
+        # 训练表现为"验证指标恒定"。加一层 LayerNorm 把输出尺度拉回可学范围。
+        self.out_norm = nn.LayerNorm(hidden_dim)
         
         # 最终融合层
         self.final_fusion = nn.Sequential(
@@ -258,6 +263,9 @@ class TwoStageFusion(nn.Module):
         
         if not is_temporal:
             fused = fused.squeeze(1)
-        
+
+        fused = torch.nan_to_num(fused, nan=0.0, posinf=1e4, neginf=-1e4)
+        fused = self.out_norm(fused)
+
         return fused
 
