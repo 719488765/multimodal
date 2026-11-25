@@ -176,7 +176,7 @@ class MultimodalEmotionModel(nn.Module):
     def forward(self, video=None, audio=None, physiological=None, text=None,
                 text_input_ids=None, text_attention_mask=None, previous_emotions=None,
                 audio_precomputed=None, dataset_ids=None, context_text_input_ids=None,
-                context_text_attention_mask=None, sequence_mask=None,
+                context_text_attention_mask=None, sequence_mask=None, modality_mask=None,
                 return_fmc_loss=False, return_domain_logits=False, **kwargs):
         """
         前向传播
@@ -305,6 +305,7 @@ class MultimodalEmotionModel(nn.Module):
                 previous_emotions=previous_emotions,
                 active_mask=active_mask,
                 valid_mask=sequence_mask,
+                modality_mask=modality_mask,
             )
         else:
             # 标准融合、领导-跟随或两阶段融合
